@@ -103,8 +103,9 @@ show why they satisfy the safety bar.
 ## Getting started
 
 The Python package requires Python 3.11 or newer. Session-input, initial
-observation, and candidate-revision schemas are implemented; extraction, review
-transitions, and ingestion behavior are not implemented yet.
+observation, candidate-revision, and outer ingestion-envelope schemas are
+implemented; extraction, review transitions, and approved-candidate serialization
+are not implemented yet.
 
 ```bash
 git clone https://github.com/datalife-ehealth/datalife-clinical-agents.git
@@ -129,6 +130,7 @@ or model provider. Schema tests live in the top-level `tests/` directory. See
 [Session input v1](docs/session_input.md) for field rules and a construction example.
 See [Observation v1](docs/observations.md) for typed values and uncertainty rules.
 See [Candidate intake v1](docs/candidate_intake.md) for revision and review fields.
+See [Ingestion envelope v1](docs/ingestion_envelope.md) for the core request shape.
 
 Read [CONTRIBUTING.md](CONTRIBUTING.md), then propose one bounded use case and its
 evaluation dataset. Never use real patient records in an issue, fixture, demo, or

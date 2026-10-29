@@ -5,6 +5,18 @@ application code assembles this model from validated observation proposals.
 Patient input and extraction adapters must not supply the candidate's privileged
 IDs, revision metadata, review state, or human-review record.
 
+## Extraction provenance
+
+`extraction_provenance` is required and records which adapter produced the
+structured observations. Its `adapter_name` and `adapter_version` are required
+strict strings; empty and whitespace-only values are rejected. Unexpected fields
+are rejected too. Trusted application code supplies these values from the adapter
+it actually used, rather than accepting them from patient input or model output.
+This metadata does not prove extraction accuracy or grant approval.
+
+Observation provenance records the self-reported origin and source session.
+Extraction provenance instead identifies the software that performed extraction.
+
 ## Identity and corrections
 
 These fields serve different purposes:
@@ -61,6 +73,10 @@ candidate = CandidateIntakeV1(
     revision_id=UUID("00000000-0000-4000-8000-000000000003"),
     revision_number=1,
     session_id=session_id,
+    extraction_provenance={
+        "adapter_name": "synthetic_fixture",
+        "adapter_version": "1",
+    },
     observations=[{
         "provenance": {"session_id": session_id},
         "value_unit": {"observation_type": "symptom", "symptom": "headache"},
@@ -78,7 +94,6 @@ changed data instead of relying on attribute assignment or unvalidated copies.
 Serialization includes observation content and review metadata and is not safe
 to log. No schema performs network writes or grants review authorization.
 
-Candidate extraction-adapter provenance and the ingestion-envelope contract still
-need definition as the remaining Phase 2 contracts are completed. Observations
-currently record the self-reported origin and source session; those fields do not
-identify which adapter produced the candidate.
+The outer ingestion-envelope schema is documented in
+[Ingestion envelope v1](ingestion_envelope.md). Building its body from an approved
+candidate remains Phase 4 work.

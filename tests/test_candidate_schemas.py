@@ -23,6 +23,10 @@ def candidate_data():
         "revision_id": REVISION_ID,
         "revision_number": 1,
         "session_id": SESSION_ID,
+        "extraction_provenance": {
+            "adapter_name": "synthetic_fixture",
+            "adapter_version": "1",
+        },
         "observations": [{
             "provenance": {"session_id": SESSION_ID},
             "value_unit": {"observation_type": "symptom", "symptom": "headache"},
@@ -49,10 +53,13 @@ def test_new_candidate_defaults_to_draft_and_string_version(candidate_data):
     assert candidate.parent_revision_id is None
     assert candidate.human_review is None
     assert candidate.observations[0].uncertainty.is_uncertain is True
+    assert candidate.extraction_provenance.adapter_name == "synthetic_fixture"
+    assert candidate.extraction_provenance.adapter_version == "1"
 
 
 @pytest.mark.parametrize("field", [
     "candidate_id", "revision_id", "revision_number", "session_id", "observations",
+    "extraction_provenance",
 ])
 def test_requires_explicit_candidate_fields(candidate_data, field):
     del candidate_data[field]
@@ -212,7 +219,7 @@ def test_review_timestamp_must_have_timezone(candidate_data, human_review):
         CandidateIntakeV1.model_validate(candidate_data)
 
 
-@pytest.mark.parametrize("section", [None, "human_review"])
+@pytest.mark.parametrize("section", [None, "human_review", "extraction_provenance"])
 def test_unknown_fields_fail_closed(candidate_data, human_review, section):
     candidate_data.update(review_status=ReviewStatus.APPROVED, human_review=human_review)
     target = candidate_data if section is None else candidate_data[section]

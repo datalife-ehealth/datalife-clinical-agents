@@ -3,6 +3,8 @@
 from typing import Annotated, Literal, Self
 from uuid import UUID
 from enum import Enum
+import json
+import math
 
 from pydantic import (
     AwareDatetime,
@@ -194,6 +196,26 @@ class HumanReview(Arguments):
         return value
 
 
+class ExtractionProvenance(Arguments):
+    """Records which adapter produced the observations; supplied by trusted code."""
+
+    adapter_name: str = Field(
+        min_length=1,
+        description="Adapter name supplied by trusted application code, e.g. synthetic_fixture.",
+    )
+    adapter_version: str = Field(
+        min_length=1,
+        description="Adapter version supplied by trusted application code for reproducibility.",
+    )
+
+    @field_validator("adapter_name", "adapter_version")
+    @classmethod
+    def require_nonblank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("adapter name and version must not be blank")
+        return value
+
+
 class CandidateIntakeV1(Arguments):
     """One candidate revision, assembled by trusted code from untrusted observations."""
 
@@ -223,6 +245,9 @@ class CandidateIntakeV1(Arguments):
     review_status: ReviewStatus = Field(
         default=ReviewStatus.DRAFT,
         description="Trusted workflow state; model or patient input must not set this.",
+    )
+    extraction_provenance: ExtractionProvenance = Field(
+        description="Extraction adapter identity assigned by trusted code, not model output.",
     )
     human_review: HumanReview | None = Field(
         default=None,
@@ -257,3 +282,69 @@ class CandidateIntakeV1(Arguments):
         elif self.human_review is not None:
             raise ValueError("unreviewed revisions cannot carry a human decision")
         return self
+
+# Core ingestion envelope
+class IngestionEnvelopeV1(Arguments):
+    """Core-compatible JSON request shape; does not authorize or perform ingestion."""
+
+    subject_key: str = Field(
+        min_length=4,
+        max_length=64,
+        repr=False,
+        description="Opaque patient-client subject key, verified by trusted application code.",
+    )
+    kind: Literal["json"] = Field(
+        default="json", description="Only JSON ingestion is supported by this contract.",
+    )
+    media_type: Literal["application/json"] = Field(
+        default="application/json", description="Media type required for JSON ingestion.",
+    )
+    body: str = Field(
+        min_length=1,
+        repr=False,
+        description="Serialized JSON object, not a dictionary; approval and PII checks are separate.",
+    )
+
+    @field_validator("subject_key")
+    @classmethod
+    def require_nonblank_subject_key(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("subject key must not be blank")
+        return value
+
+    @field_validator("body")
+    @classmethod
+    def require_json_object(cls, value: str) -> str:
+        # Python's JSON decoder otherwise accepts duplicates and NaN/Infinity.
+        def unique_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
+            result = {}
+            for key, item in pairs:
+                if key in result:
+                    raise ValueError("duplicate JSON key")
+                result[key] = item
+            return result
+
+        def reject_constant(token: str) -> float:
+            raise ValueError("nonfinite JSON number")
+
+        def finite_float(token: str) -> float:
+            number = float(token)
+            if not math.isfinite(number):
+                raise ValueError("nonfinite JSON number")
+            return number
+
+        try:
+            value.encode("utf-8")
+            parsed = json.loads(
+                value,
+                object_pairs_hook=unique_object,
+                parse_constant=reject_constant,
+                parse_float=finite_float,
+            )
+        except (ValueError, UnicodeError, RecursionError, OverflowError):
+            # Never reflect JSON fragments or parser details in the error message.
+            raise ValueError("body must contain valid UTF-8 JSON with unique keys and finite numbers") from None
+        if not isinstance(parsed, dict):
+            raise ValueError("body must contain a JSON object")
+        # Validation must not rewrite text that will later be hashed by the core.
+        return value
