@@ -23,6 +23,7 @@ class Arguments(BaseModel):
         extra="forbid",
         strict=True,
         hide_input_in_errors=True,
+        revalidate_instances="always",
     )
 
 # Session input
@@ -181,7 +182,10 @@ class HumanReview(Arguments):
         repr=False,
         description="Opaque reviewer identifier supplied by trusted authorization code.",
     )
-    decision: Literal["approved", "rejected"] = Field(
+    decision: Literal[
+        ReviewStatus.APPROVED,
+        ReviewStatus.REJECTED,
+    ] = Field(
         description="Recorded human decision; trusted workflow must verify its origin.",
     )
     reviewed_at: AwareDatetime = Field(
@@ -277,7 +281,7 @@ class CandidateIntakeV1(Arguments):
                 raise ValueError("approved or rejected revisions require a human review")
             if self.human_review.revision_id != self.revision_id:
                 raise ValueError("human review must refer to the current revision")
-            if self.human_review.decision != self.review_status.value:
+            if self.human_review.decision != self.review_status:
                 raise ValueError("human decision must match the review status")
         elif self.human_review is not None:
             raise ValueError("unreviewed revisions cannot carry a human decision")

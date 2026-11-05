@@ -7,7 +7,7 @@ from uuid import UUID
 import pytest
 from pydantic import ValidationError
 
-from datalife_clinical_agents.schemas import CandidateIntakeV1, ReviewStatus
+from datalife_clinical_agents.schemas import CandidateIntakeV1, HumanReview, ReviewStatus
 
 
 SESSION_ID = UUID("00000000-0000-4000-8000-000000000001")
@@ -40,7 +40,7 @@ def human_review():
     return {
         "revision_id": REVISION_ID,
         "reviewer_id": "synthetic-reviewer-001",
-        "decision": "approved",
+        "decision": ReviewStatus.APPROVED,
         "reviewed_at": datetime(2026, 1, 1, tzinfo=timezone.utc),
     }
 
@@ -171,12 +171,23 @@ def test_human_decision_required_for_reviewed_states(candidate_data, status):
 
 @pytest.mark.parametrize("status", [ReviewStatus.APPROVED, ReviewStatus.REJECTED])
 def test_accepts_matching_human_review_snapshot(candidate_data, human_review, status):
-    human_review["decision"] = status.value
+    human_review["decision"] = status
     candidate_data.update(review_status=status, human_review=human_review)
     candidate = CandidateIntakeV1.model_validate(candidate_data)
     assert candidate.human_review.revision_id == candidate.revision_id
+    assert candidate.human_review.decision is status
+    assert candidate.model_dump(mode="json")["human_review"]["decision"] == status.value
     assert candidate.observations[0].uncertainty.is_uncertain is True
     assert CandidateIntakeV1.model_validate_json(candidate.model_dump_json()) == candidate
+
+
+@pytest.mark.parametrize("status", [ReviewStatus.DRAFT, ReviewStatus.PENDING, ReviewStatus.CANCELLED])
+def test_human_review_rejects_nondecision_statuses(human_review, status):
+    human_review["decision"] = status
+    with pytest.raises(ValidationError) as caught:
+        HumanReview.model_validate(human_review)
+    assert caught.value.errors()[0]["loc"] == ("decision",)
+    assert caught.value.errors()[0]["type"] == "literal_error"
 
 
 def test_rejects_review_from_old_revision(candidate_data, human_review):

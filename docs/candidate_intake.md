@@ -30,10 +30,11 @@ These fields serve different purposes:
 
 The schema checks one snapshot. It cannot establish that a parent actually
 exists, that it belongs to this candidate and session, or that the number is
-exactly one greater than the parent's. Phase 3 workflow code must check history,
-assign fresh revision IDs, and reset corrected candidates to drafting with no
-inherited review. Reusing an approved revision ID for changed content is forbidden
-by the workflow contract; the schema alone cannot detect that reuse.
+exactly one greater than the parent's. The [state machine](state_machine.md) manages
+the parent relationship, prevents reuse of known revision IDs, increments the
+number, and resets changed candidates to drafting with no inherited review.
+Reusing an approved revision ID for changed content is forbidden by the workflow
+contract; the schema alone cannot detect that reuse.
 
 ## Review consistency
 
@@ -88,8 +89,9 @@ assert candidate.schema_version == "1"
 assert candidate.human_review is None
 ```
 
-Repeat validation with the same supplied IDs preserves identity; deduplicating
-operations is still workflow work. Models remain validated snapshots: revalidate
+Repeat validation with the same supplied IDs preserves identity; the state
+machine also supports operation retries within one instance's lifetime.
+Models remain validated snapshots: revalidate
 changed data instead of relying on attribute assignment or unvalidated copies.
 Serialization includes observation content and review metadata and is not safe
 to log. No schema performs network writes or grants review authorization.

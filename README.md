@@ -104,8 +104,9 @@ show why they satisfy the safety bar.
 
 The Python package requires Python 3.11 or newer. Session-input, initial
 observation, candidate-revision, and outer ingestion-envelope schemas are
-implemented; extraction, review transitions, and approved-candidate serialization
-are not implemented yet.
+implemented, along with an in-memory deterministic review state machine.
+Extraction, privacy boundary validation, and approved-candidate serialization are
+not implemented yet.
 
 ```bash
 git clone https://github.com/datalife-ehealth/datalife-clinical-agents.git
@@ -126,11 +127,12 @@ python -m pytest
 Editable installation makes changes under `src/datalife_clinical_agents` available
 without reinstalling. Dependency installation needs access to a package index or
 a local package cache; the package and default tests require no external service
-or model provider. Schema tests live in the top-level `tests/` directory. See
+or model provider. Schema and workflow tests live in the top-level `tests/` directory. See
 [Session input v1](docs/session_input.md) for field rules and a construction example.
 See [Observation v1](docs/observations.md) for typed values and uncertainty rules.
 See [Candidate intake v1](docs/candidate_intake.md) for revision and review fields.
 See [Ingestion envelope v1](docs/ingestion_envelope.md) for the core request shape.
+See [State machine](docs/state_machine.md) for transitions, corrections, and retries.
 
 Read [CONTRIBUTING.md](CONTRIBUTING.md), then propose one bounded use case and its
 evaluation dataset. Never use real patient records in an issue, fixture, demo, or
