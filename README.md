@@ -105,8 +105,8 @@ show why they satisfy the safety bar.
 The Python package requires Python 3.11 or newer. Session-input, initial
 observation, candidate-revision, and outer ingestion-envelope schemas are
 implemented, along with an in-memory deterministic review state machine.
-Extraction, privacy boundary validation, and approved-candidate serialization are
-not implemented yet.
+An offline text identifier checker is also implemented. Extraction, full privacy
+boundary integration, and approved-candidate serialization are not implemented yet.
 
 ```bash
 git clone https://github.com/datalife-ehealth/datalife-clinical-agents.git
@@ -133,6 +133,7 @@ See [Observation v1](docs/observations.md) for typed values and uncertainty rule
 See [Candidate intake v1](docs/candidate_intake.md) for revision and review fields.
 See [Ingestion envelope v1](docs/ingestion_envelope.md) for the core request shape.
 See [State machine](docs/state_machine.md) for transitions, corrections, and retries.
+See [Text boundary rejection](docs/validation.md) for identifier rules and limitations.
 
 Read [CONTRIBUTING.md](CONTRIBUTING.md), then propose one bounded use case and its
 evaluation dataset. Never use real patient records in an issue, fixture, demo, or
