@@ -102,12 +102,40 @@ show why they satisfy the safety bar.
 
 ## Getting started
 
-There is no package to install yet:
+The Python package requires Python 3.11 or newer. Session-input, initial
+observation, candidate-revision, and outer ingestion-envelope schemas are
+implemented, along with an in-memory deterministic review state machine.
+Offline boundary checks are integrated with the workflow, and an explicit serializer
+produces a candidate ingestion envelope after approval without a network write.
+Extraction adapters, a hosted API, and frontend integration are not implemented.
 
 ```bash
 git clone https://github.com/datalife-ehealth/datalife-clinical-agents.git
 cd datalife-clinical-agents
+python -m venv .venv
 ```
+
+Activate the virtual environment with `.venv\Scripts\Activate.ps1` in PowerShell
+or `source .venv/bin/activate` on macOS/Linux, then install the package and test
+dependencies:
+
+```bash
+python -m pip install -e ".[test]"
+python -c "import datalife_clinical_agents"
+python -m pytest
+```
+
+Editable installation makes changes under `src/datalife_clinical_agents` available
+without reinstalling. Dependency installation needs access to a package index or
+a local package cache; the package and default tests require no external service
+or model provider. Schema and workflow tests live in the top-level `tests/` directory. See
+[Session input v1](docs/session_input.md) for field rules and a construction example.
+See [Observation v1](docs/observations.md) for typed values and uncertainty rules.
+See [Candidate intake v1](docs/candidate_intake.md) for revision and review fields.
+See [Ingestion envelope v1](docs/ingestion_envelope.md) for the core request shape.
+See [State machine](docs/state_machine.md) for transitions, corrections, and retries.
+See [Text boundary rejection](docs/validation.md) for identifier rules and limitations.
+See [Serialization](docs/serialization.md) for the approved-candidate output contract.
 
 Read [CONTRIBUTING.md](CONTRIBUTING.md), then propose one bounded use case and its
 evaluation dataset. Never use real patient records in an issue, fixture, demo, or
