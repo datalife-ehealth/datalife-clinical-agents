@@ -3,6 +3,7 @@
 import json
 import socket
 from datetime import datetime, timezone
+from pathlib import Path
 from uuid import UUID
 
 import pytest
@@ -203,6 +204,33 @@ def test_approved_session_serializes_exact_core_shape_without_network(monkeypatc
     assert "raw_text" not in envelope.body
     assert "subject_key" not in body
     assert serialize_approved_candidate(machine, expected_revision_id=REVISION).body == envelope.body
+
+
+def test_mixed_observations_match_literal_v1_ingestion_fixture():
+    source = session()
+    source.intake_input.raw_text = "Synthetic report: headache for three days; blood pressure 145/90 mmHg."
+    initial = candidate()
+    initial.observations.append(ObservationV1(
+        provenance={"session_id": SESSION},
+        value_unit={"observation_type": "blood_pressure", "systolic": 145, "diastolic": 90},
+        uncertainty={"is_uncertain": False, "abstained": False, "confidence_score": 0.85},
+    ))
+    machine = workflow(initial=initial, source=source)
+    approve(machine)
+
+    envelope = serialize_approved_candidate(machine, expected_revision_id=REVISION)
+    # This expected contract is hand-authored, not dumped from the input models.
+    fixture = Path(__file__).parent / "fixtures" / "approved_mixed_intake_v1.json"
+    expected_body = json.loads(fixture.read_text(encoding="utf-8"))
+    assert envelope.model_dump(exclude={"body"}) == {
+        "subject_key": "synthetic-subject-001",
+        "kind": "json",
+        "media_type": "application/json",
+    }
+    assert json.loads(envelope.body) == expected_body
+    assert envelope.body == json.dumps(
+        expected_body, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False,
+    )
 
 
 @pytest.mark.parametrize("state", ["draft", "pending", "cancelled", "rejected"])

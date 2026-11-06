@@ -1,0 +1,58 @@
+{
+  "schema_version": "1",
+  "candidate_id": "00000000-0000-0000-0000-000000000003",
+  "revision_id": "00000000-0000-0000-0000-000000000002",
+  "parent_revision_id": null,
+  "revision_number": 1,
+  "session_id": "00000000-0000-0000-0000-000000000001",
+  "review_status": "approved",
+  "extraction_provenance": {
+    "adapter_name": "synthetic_fixture",
+    "adapter_version": "1"
+  },
+  "human_review": {
+    "revision_id": "00000000-0000-0000-0000-000000000002",
+    "reviewer_id": "synthetic-patient-001",
+    "decision": "approved",
+    "reviewed_at": "2026-01-01T00:00:00Z"
+  },
+  "observations": [
+    {
+      "schema_version": "1",
+      "provenance": {
+        "source": "self_reported",
+        "session_id": "00000000-0000-0000-0000-000000000001"
+      },
+      "value_unit": {
+        "observation_type": "symptom",
+        "symptom": "headache",
+        "duration_days": 3.0
+      },
+      "uncertainty": {
+        "confidence_score": null,
+        "is_uncertain": true,
+        "abstained": false,
+        "abstained_reason": null
+      }
+    },
+    {
+      "schema_version": "1",
+      "provenance": {
+        "source": "self_reported",
+        "session_id": "00000000-0000-0000-0000-000000000001"
+      },
+      "value_unit": {
+        "observation_type": "blood_pressure",
+        "systolic": 145,
+        "diastolic": 90,
+        "unit": "mmHg"
+      },
+      "uncertainty": {
+        "confidence_score": 0.85,
+        "is_uncertain": false,
+        "abstained": false,
+        "abstained_reason": null
+      }
+    }
+  ]
+}
