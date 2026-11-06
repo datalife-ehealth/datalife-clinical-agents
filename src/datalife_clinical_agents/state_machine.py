@@ -5,7 +5,11 @@ from uuid import UUID
 
 from pydantic import ValidationError
 
-from .schemas import CandidateIntakeV1, HumanReview, ObservationV1, ReviewStatus
+from .schemas import CandidateIntakeV1, HumanReview, ObservationV1, ReviewStatus, SessionInputV1
+from .validation import (
+    DEFAULT_LIMITS, BoundaryValidationError, ValidationLimits,
+    require_structure_limits, validate_candidate, validate_observation, validate_session_input,
+)
 
 
 class WorkflowError(ValueError):
@@ -33,16 +37,27 @@ class StateMachine:
 
     def __init__(
         self, *, candidate_intake: CandidateIntakeV1, authorized_reviewer_id: str,
+        session_input: SessionInputV1, limits: ValidationLimits = DEFAULT_LIMITS,
     ) -> None:
         if not isinstance(authorized_reviewer_id, str) or not authorized_reviewer_id.strip():
             raise WorkflowError("invalid_authorized_reviewer")
+        if not isinstance(limits, ValidationLimits):
+            raise WorkflowError("invalid_validation_limits")
         if not isinstance(candidate_intake, CandidateIntakeV1):
             raise WorkflowError("invalid_candidate")
         try:
-            self._candidate = CandidateIntakeV1.model_validate(candidate_intake)
-        except ValidationError:
-            raise WorkflowError("invalid_candidate") from None
+            self._session = validate_session_input(session_input, limits=limits)
+        except BoundaryValidationError:
+            raise WorkflowError("session_boundary_rejected") from None
+        self._limits = limits
+        try:
+            self._candidate = validate_candidate(candidate_intake, session_input=self._session, limits=limits)
+        except BoundaryValidationError as error:
+            code = "invalid_candidate" if str(error) == "invalid_candidate" else "candidate_boundary_rejected"
+            raise WorkflowError(code) from None
         self._authorized_reviewer_id = authorized_reviewer_id
+        # A loaded snapshot claiming approval is not evidence of a decision here.
+        self._approved_revision_id: UUID | None = None
         # Content revisions and retry results are process-local, not an audit log.
         self._revisions = {self._candidate.revision_id: _snapshot(self._candidate)}
         self._operations: dict[UUID, _OperationResult] = {}
@@ -56,6 +71,27 @@ class StateMachine:
     def revision_history(self) -> tuple[CandidateIntakeV1, ...]:
         """Latest workflow snapshot of each content revision seen by this instance."""
         return tuple(_snapshot(item) for item in self._revisions.values())
+
+    @property
+    def session_input(self) -> SessionInputV1:
+        """Detached source context; never include its raw report in the output body."""
+        return self._session.model_copy(deep=True)
+
+    @property
+    def validation_limits(self) -> ValidationLimits:
+        """The same immutable resource configuration used for review and serialization."""
+        return self._limits
+
+    def get_approved_candidate(self, *, expected_revision_id: UUID) -> CandidateIntakeV1:
+        """Release only the current revision approved through this machine instance."""
+        if not isinstance(expected_revision_id, UUID) or expected_revision_id != self._candidate.revision_id:
+            raise WorkflowError("stale_revision")
+        if (self._candidate.review_status is not ReviewStatus.APPROVED
+                or self._approved_revision_id != expected_revision_id):
+            raise WorkflowError("approval_required")
+        if self._candidate.human_review.reviewer_id != self._authorized_reviewer_id:
+            raise WorkflowError("unauthorized_reviewer")
+        return _snapshot(self._candidate)
 
     def submit_for_review(
         self, *, operation_id: UUID, expected_revision_id: UUID,
@@ -103,6 +139,10 @@ class StateMachine:
             if not isinstance(human_review, HumanReview):
                 raise WorkflowError("invalid_human_review")
             try:
+                require_structure_limits(human_review, limits=self._limits)
+            except BoundaryValidationError:
+                raise WorkflowError("review_boundary_rejected") from None
+            try:
                 review = HumanReview.model_validate(human_review)
             except ValidationError:
                 raise WorkflowError("invalid_human_review") from None
@@ -111,17 +151,22 @@ class StateMachine:
         if action == "correct":
             if not isinstance(revision_id, UUID):
                 raise WorkflowError("invalid_revision_id")
-            if not isinstance(observations, list) or any(
-                not isinstance(item, ObservationV1) for item in observations
-            ):
+            if not isinstance(observations, list):
+                raise WorkflowError("invalid_observations")
+            try:
+                require_structure_limits(observations, limits=self._limits)
+            except BoundaryValidationError:
+                raise WorkflowError("observation_boundary_rejected") from None
+            if any(not isinstance(item, ObservationV1) for item in observations):
                 raise WorkflowError("invalid_observations")
             try:
                 replacements = [
-                    ObservationV1.model_validate(item)
+                    validate_observation(item, limits=self._limits)
                     for item in observations
                 ]
-            except ValidationError:
-                raise WorkflowError("invalid_observations") from None
+            except BoundaryValidationError as error:
+                code = "invalid_observations" if str(error) == "invalid_observation" else "observation_boundary_rejected"
+                raise WorkflowError(code) from None
 
         request = (
             action, expected_revision_id, revision_id,
@@ -175,16 +220,18 @@ class StateMachine:
                 human_review=review,
             )
         try:
-            updated = CandidateIntakeV1.model_validate(data)
-        except ValidationError:
+            updated = validate_candidate(data, session_input=self._session, limits=self._limits)
+        except BoundaryValidationError as error:
             # Do not expose a structured Pydantic error containing clinical input.
-            raise WorkflowError("candidate_validation_failed") from None
+            code = "candidate_validation_failed" if str(error) == "invalid_candidate" else "candidate_boundary_rejected"
+            raise WorkflowError(code) from None
 
         # All fallible validation happens before state or retry results are changed.
         history_snapshot = _snapshot(updated)
         operation_result = _OperationResult(request, _snapshot(updated))
         returned_snapshot = _snapshot(updated)
         self._candidate = updated
+        self._approved_revision_id = updated.revision_id if action == "approve" else None
         self._revisions[updated.revision_id] = history_snapshot
         self._operations[operation_id] = operation_result
         return returned_snapshot

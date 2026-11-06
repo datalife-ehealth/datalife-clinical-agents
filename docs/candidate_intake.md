@@ -98,4 +98,5 @@ to log. No schema performs network writes or grants review authorization.
 
 The outer ingestion-envelope schema is documented in
 [Ingestion envelope v1](ingestion_envelope.md). Building its body from an approved
-candidate remains Phase 4 work.
+candidate is implemented by the explicit [serializer](serialization.md), after
+workflow approval and repeated boundary checks.

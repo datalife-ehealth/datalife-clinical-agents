@@ -4,9 +4,9 @@
 create a payload from a candidate, approve observations, or send an HTTP request.
 
 The contract was checked against the core
-[`IngestRequest`](https://github.com/datalife-ehealth/datalife-datalake-core/blob/8a4e42e70810cc58907da27ca85ed7dafc44902e/src/api/routes/ingestion.py)
+[`IngestRequest`](https://github.com/datalife-ehealth/datalife-datalake-core/blob/main/src/api/routes/ingestion.py)
 and its
-[payload parser](https://github.com/datalife-ehealth/datalife-datalake-core/blob/f830bcfa0917764491fef0d392faf71158271683/src/services/parsing.py).
+[payload parser](https://github.com/datalife-ehealth/datalife-datalake-core/blob/main/src/services/parsing.py).
 
 ## Fields
 
@@ -58,20 +58,21 @@ Serializing the envelope itself escapes the JSON string in `body`. This is
 expected: the outer request is a JSON object containing an inner JSON document
 as a string, as required by the core API.
 
-## Remaining boundaries
+## Boundary enforcement
 
 This model validates the transport shape, not the clinical content. A JSON object
 such as `{}` may pass these checks without containing a usable intake. Inner
 observation types, unknown privileged fields within the body, subject/session
 binding, PII screening, and approval of the exact current revision must be checked
-by the later Phase 4 serializer and boundary validation. The serializer must build
-the body from typed candidate data, rather than accept arbitrary dictionaries as
-approved content.
+by the [serializer](serialization.md) and shared [validation](validation.md).
+The serializer builds the body only from the workflow's current approved typed
+candidate; it does not accept arbitrary dictionaries as approved content.
 
 The core also imposes configurable body-size, nesting-depth, and node-count limits.
-Those resource limits are not implemented by this schema; valid syntax alone is
-not a claim that the core will accept a payload. Consistent local resource limits
-remain part of the Phase 4 boundary work.
+The standalone schema checks syntax; the `validate_ingestion_envelope` boundary
+function additionally enforces those resource limits. The serializer always uses
+that boundary function. A structurally valid envelope alone is not evidence of
+approval, authorization, or acceptance by a differently configured core instance.
 
 The body and subject key are omitted from normal model representations. Model
 dumps and structured validation errors can still contain submitted data and must

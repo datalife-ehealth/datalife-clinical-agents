@@ -1,9 +1,16 @@
 """Bounded, offline rejection checks; no redaction or raw-value reflection."""
 
+import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from enum import Enum
 from typing import Literal
+
+from pydantic import BaseModel, ValidationError
+
+from .schemas import (
+    CandidateIntakeV1, IngestionEnvelopeV1, ObservationV1, SessionInputV1, SymptomValue,
+)
 
 
 class BoundaryCategory(str, Enum):
@@ -38,6 +45,24 @@ class BoundaryResult:
 
 class BoundaryValidationError(ValueError):
     """Fixed rejection message safe to expose without submitted input."""
+
+
+@dataclass(frozen=True)
+class ValidationLimits:
+    """Local text cap plus the reference core's default JSON resource limits."""
+
+    max_text_bytes: int = 16_384
+    max_body_bytes: int = 1_000_000
+    max_depth: int = 64
+    max_nodes: int = 10_000
+
+    def __post_init__(self) -> None:
+        if any(type(getattr(self, item.name)) is not int or getattr(self, item.name) < 1
+               for item in fields(self)):
+            raise ValueError("validation limits must be positive integers")
+
+
+DEFAULT_LIMITS = ValidationLimits()
 
 
 # Adapted from datalife-datalake-core/src/services/pii.py (MIT), blob
@@ -122,3 +147,164 @@ class PIIBoundaryChecker:
         """Raise on known violations; never redact, log, or include input in errors."""
         if self.check_text(text).has_violations:
             raise BoundaryValidationError("text_boundary_rejected")
+
+
+def _utf8_size(text: str, maximum: int) -> int:
+    """Check character length before allocating a bounded UTF-8 representation."""
+    if len(text) > maximum:
+        raise BoundaryValidationError("payload_too_large")
+    try:
+        size = len(text.encode("utf-8"))
+    except UnicodeEncodeError:
+        raise BoundaryValidationError("invalid_text_encoding") from None
+    if size > maximum:
+        raise BoundaryValidationError("payload_too_large")
+    return size
+
+
+def require_structure_limits(value: object, *, limits: ValidationLimits = DEFAULT_LIMITS) -> None:
+    """Bound Python inputs before schema validation and JSON values after parsing.
+
+    Match core node/depth counting: the root is depth 1, values and containers
+    count as nodes, and object keys do not. Also bound aggregate string/key bytes
+    before model cloning; the exact JSON byte size is checked during serialization.
+    """
+    stack = [(value, 1)]
+    nodes = 0
+    text_bytes = 0
+    while stack:
+        current, depth = stack.pop()
+        nodes += 1
+        if nodes > limits.max_nodes:
+            raise BoundaryValidationError("payload_node_limit")
+        if depth > limits.max_depth:
+            raise BoundaryValidationError("payload_depth_limit")
+        if isinstance(current, BaseModel):
+            current = current.__dict__
+        if isinstance(current, dict):
+            if len(current) + nodes + len(stack) > limits.max_nodes:
+                raise BoundaryValidationError("payload_node_limit")
+            for key, child in current.items():
+                if not isinstance(key, str):
+                    raise BoundaryValidationError("unsupported_object_key")
+                text_bytes += _utf8_size(key, limits.max_body_bytes)
+                if text_bytes > limits.max_body_bytes:
+                    raise BoundaryValidationError("payload_too_large")
+                stack.append((child, depth + 1))
+        elif isinstance(current, (list, tuple)):
+            if len(current) + nodes + len(stack) > limits.max_nodes:
+                raise BoundaryValidationError("payload_node_limit")
+            stack.extend((child, depth + 1) for child in current)
+        elif isinstance(current, str):
+            text_bytes += _utf8_size(current, limits.max_body_bytes)
+            if text_bytes > limits.max_body_bytes:
+                raise BoundaryValidationError("payload_too_large")
+
+
+def validate_session_input(
+    value: object, *, limits: ValidationLimits = DEFAULT_LIMITS,
+) -> SessionInputV1:
+    """Validate the input contract and screen raw text before extraction or review."""
+    require_structure_limits(value, limits=limits)
+    try:
+        session = SessionInputV1.model_validate(value)
+    except ValidationError:
+        raise BoundaryValidationError("invalid_session_input") from None
+    require_structure_limits(session, limits=limits)
+    PIIBoundaryChecker(max_text_bytes=limits.max_text_bytes).require_text(session.intake_input.raw_text)
+    return session
+
+
+def _require_observation_text(observation: ObservationV1, checker: PIIBoundaryChecker) -> None:
+    if isinstance(observation.value_unit, SymptomValue) and observation.value_unit.symptom is not None:
+        checker.require_text(observation.value_unit.symptom)
+    if observation.uncertainty.abstained_reason is not None:
+        checker.require_text(observation.uncertainty.abstained_reason)
+
+
+def validate_observation(
+    value: object, *, limits: ValidationLimits = DEFAULT_LIMITS,
+) -> ObservationV1:
+    """Reject unsupported extraction fields/types and identifiers in reported text."""
+    require_structure_limits(value, limits=limits)
+    try:
+        observation = ObservationV1.model_validate(value)
+    except ValidationError:
+        raise BoundaryValidationError("invalid_observation") from None
+    require_structure_limits(observation, limits=limits)
+    _require_observation_text(observation, PIIBoundaryChecker(max_text_bytes=limits.max_text_bytes))
+    return observation
+
+
+def validate_candidate(
+    value: object, *, session_input: SessionInputV1, limits: ValidationLimits = DEFAULT_LIMITS,
+) -> CandidateIntakeV1:
+    """Reuse schema invariants, bind the source session, and screen all free text.
+
+    This checks content, not the authority to set workflow metadata or approve it.
+    """
+    session = validate_session_input(session_input, limits=limits)
+    require_structure_limits(value, limits=limits)
+    try:
+        candidate = CandidateIntakeV1.model_validate(value)
+    except ValidationError:
+        raise BoundaryValidationError("invalid_candidate") from None
+    require_structure_limits(candidate, limits=limits)
+    if candidate.session_id != session.session_metadata.session_id:
+        raise BoundaryValidationError("session_mismatch")
+    checker = PIIBoundaryChecker(max_text_bytes=limits.max_text_bytes)
+    for observation in candidate.observations:
+        _require_observation_text(observation, checker)
+    checker.require_text(candidate.extraction_provenance.adapter_name)
+    checker.require_text(candidate.extraction_provenance.adapter_version)
+    if candidate.human_review is not None:
+        checker.require_text(candidate.human_review.reviewer_id)
+    return candidate
+
+
+def _require_json_depth(body: str, maximum: int) -> None:
+    """Bound bracket nesting before the recursive JSON decoder, ignoring strings."""
+    depth = 0
+    in_string = False
+    escaped = False
+    for char in body:
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+        elif char == '"':
+            in_string = True
+        elif char in "{[":
+            depth += 1
+            if depth > maximum:
+                raise BoundaryValidationError("payload_depth_limit")
+        elif char in "}]":
+            depth -= 1
+
+
+def validate_ingestion_envelope(
+    value: object, *, limits: ValidationLimits = DEFAULT_LIMITS,
+) -> IngestionEnvelopeV1:
+    """Check transport syntax and core resource limits; does not establish approval."""
+    if isinstance(value, IngestionEnvelopeV1):
+        body = value.body
+    elif isinstance(value, dict):
+        body = value.get("body")
+    else:
+        raise BoundaryValidationError("invalid_ingestion_envelope")
+    if not isinstance(body, str):
+        raise BoundaryValidationError("invalid_ingestion_envelope")
+    _utf8_size(body, limits.max_body_bytes)
+    _require_json_depth(body, limits.max_depth)
+    try:
+        # The envelope schema checks duplicate keys, finite numbers, and object root.
+        envelope = IngestionEnvelopeV1.model_validate(value)
+        parsed = json.loads(envelope.body)
+    except (ValidationError, ValueError, RecursionError):
+        raise BoundaryValidationError("invalid_ingestion_envelope") from None
+    # Also reject escaped lone surrogates in decoded keys/values before returning.
+    require_structure_limits(parsed, limits=limits)
+    return envelope

@@ -67,10 +67,12 @@ No core endpoint is called during validation or tests.
 
 ## Privacy and remaining boundaries
 
-Successful schema validation checks structure and types. It does not scan free
-text for direct identifiers or make the report safe for central services. The
-privacy gate, input-size limits, extraction outcomes, revisions, and authorized
-human review still need implementation in later steps.
+Successful schema validation checks structure and types. Use
+[`validate_session_input`](validation.md) to additionally check resource limits
+and recognizable direct identifiers before extraction or workflow processing.
+The state machine repeats these checks and binds the session to the candidate.
+A result without detected identifiers does not guarantee anonymity. Extraction
+adapters and a hosting application's authentication remain outside this module.
 
 Raw text and subject keys are omitted from normal model representations. Pydantic
 error strings hide rejected input values, but `ValidationError.errors()` can still

@@ -1,8 +1,9 @@
 # Text boundary rejection
 
-`validation.py` provides a small offline text checker. It has no NLP model, third-party
-dependencies, network calls, import-time initialization, or logging. It detects
-specific recognizable identifier forms; it does not guarantee anonymity.
+`validation.py` provides offline boundary functions and a small text checker. It
+uses the package's existing Pydantic dependency and the standard library, with no
+NLP model, additional dependencies, network calls, or logging. It detects specific
+recognizable identifier forms; it does not guarantee anonymity.
 
 ## Safe results and rejection
 
@@ -65,9 +66,11 @@ actually supply a name. It deliberately avoids matching `symptom name: headache`
 
 ZIP/city/gender/IP uniqueness heuristics, passport rules, credit-card rules, and
 general name recognition are not implemented. Unsupported categories are not
-listed as if they were detectors. Opaque subject/session/reviewer IDs are handled
-by their trusted contracts and must not be passed through this free-text scanner
-as if every identifier were clinical report content.
+listed as if they were detectors. The opaque subject key is handled by its trusted
+contract, and UUID session/revision IDs are not patient report text. Adapter and
+reviewer string metadata are also screened before serialization because they
+appear inside the clinical JSON body; they must not contain recognizable direct
+identifiers such as an email address.
 
 The default limit is 16,384 UTF-8 bytes per checked text, configurable through
 `PIIBoundaryChecker(max_text_bytes=...)`. This is a local intake-text policy,
@@ -92,11 +95,58 @@ sentence `Mara Quill reports a headache.` A result without findings means only
 that none of these documented rules matched; it is not permission to send arbitrary
 free text to central services.
 
-## Remaining integration
+## Shared boundary functions
 
-This step implements the text-checking primitive and its tests. It is not yet
-connected to state transitions, session/extraction intake, or the approved-candidate
-serializer. Full boundary validation still needs to reject unsupported fields and
-privileged actions through the typed contracts, select every relevant free-text
-field for scanning, enforce payload limits, and run at the required workflow
-boundaries. PII rejection is separate from review readiness and authorization.
+Use these functions at application boundaries rather than treating a standalone
+schema constructor as the complete privacy check:
+
+| Function | Checks |
+| --- | --- |
+| `validate_session_input` | Strict session schema, resource bounds, and source report text. Call before any future extraction adapter. |
+| `validate_observation` | Strict typed observation, resource bounds, symptom text, and any abstention reason. |
+| `validate_candidate` | Existing revision/review schema rules, source-session binding, source text, all observation text, adapter identity strings, and any reviewer ID. |
+| `validate_ingestion_envelope` | Exact transport contract, bounded JSON parsing, and core-compatible body resource limits. Does not establish approval. |
+
+The functions accept existing models or Python input dictionaries and return
+revalidated models. Strict Python-mode UUID, datetime, and enum requirements still
+apply. There is no new HTTP parsing endpoint. Unexpected fields, prohibited identity
+fields such as `name`, unknown observation types, and privileged action fields fail
+through the schemas' allowlists, not by guessing meaning from arbitrary text.
+The workflow has only explicit operations; prompt text cannot grant privileges.
+
+The state machine requires a source `session_input` at construction and checks
+its ID against the candidate. Entry, corrections, and new transitions run these
+checks; submission/approval failures never change state. The serializer checks
+the current authorized approval separately and then reruns source and candidate
+validation. A retry returns only a detached prior result; it does not grant
+permission to serialize that snapshot as current output.
+
+## Resource bounds
+
+`ValidationLimits` is immutable configuration shared by the workflow and serializer:
+
+| Setting | Default |
+| --- | --- |
+| Per-text UTF-8 bytes | 16,384 |
+| JSON body UTF-8 bytes | 1,000,000 |
+| Maximum depth | 64 |
+| Maximum value/container nodes | 10,000 |
+
+The last three defaults match the inspected core
+[`Settings`](https://github.com/datalife-ehealth/datalife-datalake-core/blob/main/src/core/config.py),
+file blob `6212794c64704f7a00c840069abf7ad5029d2903`. Configured deployments must
+keep local limits compatible with the target core's configured limits.
+
+An iterative precheck bounds Python inputs before schema cloning, including cyclic
+or excessively wide inputs. Limits are checked again after defaults are populated.
+Values and containers count as nodes; keys do not. The root is depth 1, and scalar
+leaves count toward depth, matching core JSON measurement. Aggregate string/key
+bytes are bounded before serialization. The serializer enforces the exact body
+byte budget while encoding, including JSON punctuation/escaping overhead.
+
+Envelope validation bounds body size and bracket nesting before recursive JSON
+decoding, then checks decoded depth, nodes, and UTF-8 validity. It also catches lone
+surrogates introduced by JSON escapes. The envelope schema rejects duplicate keys,
+nonfinite numbers, and unsupported roots. All errors crossing these boundaries use
+fixed messages without raw values or parser details. PII rejection remains separate
+from review readiness and authorization.

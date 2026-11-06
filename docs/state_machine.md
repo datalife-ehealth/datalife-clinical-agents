@@ -3,6 +3,9 @@
 `state_machine.py` operates on one candidate in memory. The schemas describe valid
 snapshots; the machine checks which operation may produce the next snapshot.
 It performs no extraction, network calls, persistence, or clinical decisions.
+Construction requires `session_input` as well as the candidate and authorized
+reviewer. The validated source session is bound to the candidate's session ID;
+its opaque subject key is later used by the serializer.
 
 `StateMachine` is a regular Python class because it manages behavior and private
 retry records. Its inputs and outputs remain Pydantic models. The five public
@@ -36,6 +39,9 @@ Submission and approval require nonempty observations with no abstentions. A dra
 may retain incomplete or abstained observations for correction or cancellation.
 Uncertainty is preserved during review and approval; confidence does not turn a
 self-reported observation into a verified clinical fact.
+Source and candidate text must pass the documented identifier checks before entry
+and on new transitions. Corrections are screened before saving. Failures leave
+state and retry records unchanged; invalid drafts never become reviewable.
 
 ## Corrections and snapshots
 
@@ -97,12 +103,19 @@ from datetime import datetime, timezone
 from uuid import UUID
 
 from datalife_clinical_agents.schemas import (
-    CandidateIntakeV1, HumanReview, ReviewStatus,
+    CandidateIntakeV1, HumanReview, ReviewStatus, SessionInputV1,
 )
 from datalife_clinical_agents.state_machine import StateMachine
 
 session_id = UUID(int=1)
 revision_id = UUID(int=2)
+session = SessionInputV1(
+    subject_key="synthetic-subject-001",
+    intake_input={"raw_text": "Synthetic report: headache for three days."},
+    session_metadata={
+        "session_id": session_id, "timestamp": datetime(2026, 1, 1, tzinfo=timezone.utc),
+    },
+)
 draft = CandidateIntakeV1(
     candidate_id=UUID(int=3),
     revision_id=revision_id,
@@ -116,7 +129,8 @@ draft = CandidateIntakeV1(
     }],
 )
 workflow = StateMachine(
-    candidate_intake=draft, authorized_reviewer_id="synthetic-patient-001",
+    candidate_intake=draft, session_input=session,
+    authorized_reviewer_id="synthetic-patient-001",
 )
 submit_arguments = {
     "operation_id": UUID(int=10), "expected_revision_id": revision_id,
@@ -153,7 +167,13 @@ a fresh machine from a snapshot. They are not a new audit subsystem. Distributed
 concurrency, durable retry storage, permission revocation, and retention policy
 belong to a later hosting integration, not this offline reference module.
 
-The Phase 4 privacy gate, payload limits, and approved-candidate serializer are
-still required. Pending review currently means the structural readiness checks
-passed, not that PII screening has been implemented. Approval never triggers
-serialization, network writes, or external system changes.
+`validation.py` now applies the typed boundary and text checks. Pending review
+means structural readiness and these documented checks passed; it is not proof
+of anonymity or clinical accuracy. See [Validation](validation.md) for detection
+limits. Approval never triggers serialization or external writes.
+
+The [serializer](serialization.md) explicitly requests `get_approved_candidate`
+for the expected current revision and checks the boundaries again. Only an
+approval performed by this instance establishes eligibility. Loading a snapshot
+that merely claims approval does not, and copying a snapshot or constructing a
+fresh machine cannot restore approval authority from an earlier instance.

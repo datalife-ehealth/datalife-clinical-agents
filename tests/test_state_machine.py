@@ -7,7 +7,7 @@ import pytest
 from pydantic import ValidationError
 
 from datalife_clinical_agents.schemas import (
-    CandidateIntakeV1, HumanReview, ObservationV1, ReviewStatus,
+    CandidateIntakeV1, HumanReview, ObservationV1, ReviewStatus, SessionInputV1,
 )
 from datalife_clinical_agents.state_machine import StateMachine, WorkflowError
 
@@ -17,6 +17,14 @@ REVISION = UUID(int=2)
 NEW_REVISION = UUID(int=3)
 OPERATION = UUID(int=10)
 REVIEWER = "synthetic-patient-001"
+
+
+def session():
+    return SessionInputV1(
+        subject_key="synthetic-subject-001",
+        intake_input={"raw_text": "Synthetic headache report."},
+        session_metadata={"session_id": SESSION, "timestamp": datetime(2026, 1, 1, tzinfo=timezone.utc)},
+    )
 
 
 def observation(symptom="synthetic headache", *, abstained=False):
@@ -55,6 +63,7 @@ def machine(status=ReviewStatus.DRAFT, *, observations=None):
     return StateMachine(
         candidate_intake=candidate(status, observations=observations),
         authorized_reviewer_id=REVIEWER,
+        session_input=session(),
     )
 
 
@@ -192,7 +201,7 @@ def test_constructor_rejects_mutated_nested_candidate_data():
     initial = candidate()
     initial.observations[0].uncertainty.confidence_score = 2.0
     with pytest.raises(WorkflowError, match="^invalid_candidate$"):
-        StateMachine(candidate_intake=initial, authorized_reviewer_id=REVIEWER)
+        StateMachine(candidate_intake=initial, authorized_reviewer_id=REVIEWER, session_input=session())
 
 
 def test_mutated_review_is_revalidated_before_approval():
@@ -217,7 +226,7 @@ def test_mutating_returned_approval_does_not_change_retry_record():
 
 def test_current_and_history_properties_are_detached():
     original = candidate()
-    workflow = StateMachine(candidate_intake=original, authorized_reviewer_id=REVIEWER)
+    workflow = StateMachine(candidate_intake=original, authorized_reviewer_id=REVIEWER, session_input=session())
     original.observations[0].value_unit.symptom = "outside constructor mutation"
     workflow.candidate_intake.observations[0].value_unit.symptom = "outside property mutation"
     workflow.revision_history[0].observations[0].value_unit.symptom = "outside history mutation"
@@ -317,7 +326,7 @@ def test_identical_input_and_operation_sequence_is_deterministic():
 @pytest.mark.parametrize("reviewer", [None, "", "   ", 123])
 def test_authorized_reviewer_must_be_explicit_nonblank_string(reviewer):
     with pytest.raises(WorkflowError, match="^invalid_authorized_reviewer$"):
-        StateMachine(candidate_intake=candidate(), authorized_reviewer_id=reviewer)
+        StateMachine(candidate_intake=candidate(), authorized_reviewer_id=reviewer, session_input=session())
 
 
 def test_failure_does_not_echo_submitted_content():
