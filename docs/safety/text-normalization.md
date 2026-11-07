@@ -4,6 +4,11 @@
 
 The `normalize_for_policy_match()` function creates a deterministic, normalized representation of text for policy matching.
 
+Its implementation lives in `src/datalife_clinical_agents/text_policy_normalization.py`.
+The existing `tools.text_policy_normalization` import re-exports the same function.
+Install the package with `python -m pip install -e .` before running the tools tests.
+The runtime privacy checker calls this implementation before matching identifiers.
+
 It does not perform clinical decisions, detect personally identifiable information (PII), or modify the original clinical record.
 
 ## Transformation Order
@@ -11,13 +16,24 @@ It does not perform clinical decisions, detect personally identifiable informati
 The function applies the following operations:
 
 1. Validate that the input is a string.
-2. Reject inputs longer than 10,000 characters.
+2. Reject inputs longer than `max_input_length` (default 10,000 characters).
 3. Apply Unicode case folding using `casefold()`
 4. Apply Unicode NFKC normalization.
-5. Remove U+200B (ZERO WIDTH SPACE).
-6. Collapse whitespace using `split()` and `" ".join()`.
-7. Reject normalized outputs longer than 10,000 characters.
-8. Return the normalized text.
+5. Map selected Cyrillic lookalikes to Latin characters.
+6. Remove U+200B (ZERO WIDTH SPACE).
+7. Collapse whitespace using `split()` and `" ".join()`.
+8. Reject normalized outputs longer than `max_output_length` (default 10,000 characters).
+9. Return the normalized text.
+
+## Selected lookalikes
+
+The mapping covers Cyrillic `а е о р с х у і ј ѕ н к` to Latin
+`a e o p c x y i j s h k`. Case folding handles their uppercase forms before
+translation; NFKC can also reveal mapped characters from compatibility forms.
+This helps detect mixed-script identifiers, but is not a complete Unicode
+confusable mapping and does not currently map Greek lookalikes. Some letters
+have different sounds in their own languages; this mapping is only for the
+policy-matching copy and must never rewrite clinical records.
 
 ## Zero-Width Character Policy
 
@@ -35,6 +51,8 @@ This narrow policy avoids indiscriminately deleting characters that may have lin
 - Error messages do not include the input text.
 - NFKC normalization can change compatibility distinctions, so the normalized representation must not replace the original clinical text.
 - The output limit is checked after normalization; intermediate allocations are not separately bounded.
+- The runtime checker supplies its configured text limit and checks UTF-8 bytes both before and after normalization. It preserves the original clinical text and rejects detected identifiers rather than redacting them.
+- NFKC handles compatibility forms such as full-width punctuation, but does not resolve arbitrary cross-alphabet lookalikes or detect personal names by itself.
 - Normalization uses a single `casefold()` → NFKC pass for predictable runtime and bounded processing. Certain Unicode code points (such as U+037A and U+03F9) may require multiple passes to stabilize, so universal idempotence is not guaranteed.
 
 ## Testing

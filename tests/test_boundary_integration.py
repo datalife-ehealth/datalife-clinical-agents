@@ -70,6 +70,42 @@ def approve(machine):
 
 
 @pytest.mark.parametrize("text", [
+    "synthetic@exam\u200bple.com", "synthetic\uff20example.com",
+    "synthetic@\u0435x\u0430mpl\u0435.com",
+])
+def test_disguised_identifiers_cannot_enter_workflow_or_serialize(monkeypatch, text):
+    source = session()
+    source.intake_input.raw_text = text
+    with pytest.raises(WorkflowError, match="^session_boundary_rejected$"):
+        workflow(source=source)
+
+    initial = candidate()
+    initial.observations[0].value_unit.symptom = text
+    with pytest.raises(WorkflowError, match="^candidate_boundary_rejected$"):
+        workflow(initial=initial)
+
+    machine = workflow()
+    approved = approve(machine)
+    # Simulate corrupted stored data to prove the final boundary checks again.
+    approved.observations[0].value_unit.symptom = text
+    monkeypatch.setattr(machine, "get_approved_candidate", lambda **kwargs: approved)
+    with pytest.raises(SerializationError, match="^serialization_boundary_rejected$"):
+        serialize_approved_candidate(machine, expected_revision_id=REVISION)
+
+
+def test_normalization_does_not_rewrite_stored_clinical_text():
+    source = session()
+    source.intake_input.raw_text = "Synthetic HEADACHE\u200b report."
+    initial = candidate()
+    initial.observations[0].value_unit.symptom = "HEAD\u200bACHE"
+    machine = workflow(initial=initial, source=source)
+    approve(machine)
+    envelope = serialize_approved_candidate(machine, expected_revision_id=REVISION)
+    assert machine.session_input.intake_input.raw_text == source.intake_input.raw_text
+    assert json.loads(envelope.body)["observations"][0]["value_unit"]["symptom"] == "HEAD\u200bACHE"
+
+
+@pytest.mark.parametrize("text", [
     "Contact synthetic@example.com.", "SSN 000-12-3456", "CPF 000.123.456-00",
     "Phone +1 (202) 555-0198", "My name is Mara Quill.",
 ])

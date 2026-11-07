@@ -11,6 +11,7 @@ from pydantic import BaseModel, ValidationError
 from .schemas import (
     CandidateIntakeV1, IngestionEnvelopeV1, ObservationV1, SessionInputV1, SymptomValue,
 )
+from .text_policy_normalization import normalize_for_policy_match
 
 
 class BoundaryCategory(str, Enum):
@@ -129,6 +130,19 @@ class PIIBoundaryChecker:
         if not text.strip():
             return BoundaryResult((Finding(BoundaryCategory.INVALID_INPUT),))
 
+        original_text = text
+        try:
+            text = normalize_for_policy_match(
+                text, max_input_length=self.max_text_bytes,
+                max_output_length=self.max_text_bytes,
+            )
+        except ValueError:
+            return BoundaryResult((Finding(BoundaryCategory.INPUT_TOO_LARGE),))
+        if len(text.encode("utf-8")) > self.max_text_bytes:
+            return BoundaryResult((Finding(BoundaryCategory.INPUT_TOO_LARGE),))
+        if not text:
+            return BoundaryResult((Finding(BoundaryCategory.INVALID_INPUT),))
+
         categories = []
         if _EMAIL_RE.search(text):
             categories.append(BoundaryCategory.EMAIL)
@@ -139,7 +153,8 @@ class PIIBoundaryChecker:
             for match in _PHONE_RE.finditer(text)
         ):
             categories.append(BoundaryCategory.PHONE)
-        if _EXPLICIT_NAME_RE.search(text):
+        # Whitespace collapse removes line boundaries used by the Name: rule.
+        if _EXPLICIT_NAME_RE.search(text) or _EXPLICIT_NAME_RE.search(original_text):
             categories.append(BoundaryCategory.PATIENT_NAME)
         return BoundaryResult(tuple(Finding(category) for category in categories))
 

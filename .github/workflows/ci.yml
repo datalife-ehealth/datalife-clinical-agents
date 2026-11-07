@@ -83,5 +83,8 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Install package
+        run: python -m pip install -e .
+
       - name: Run Unicode normalization tests
         run: python -m unittest discover -s tests -p "test_text_policy_normalization.py" -v

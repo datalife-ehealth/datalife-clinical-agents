@@ -77,6 +77,22 @@ The default limit is 16,384 UTF-8 bytes per checked text, configurable through
 independent of the core's whole-body size and structural limits. Oversized input
 is rejected before regex scanning; invalid input never produces a clean result.
 
+## Unicode matching
+
+Before pattern matching, the shared checker uses `normalize_for_policy_match()`
+from the installed package: casefold, NFKC, selected Cyrillic-to-Latin lookalike
+mapping, removal of U+200B, and whitespace
+collapse. This catches zero-width-space interruptions and compatibility forms
+such as full-width email punctuation. The original text is also checked for
+line-based name cues. Both original and normalized text must fit the configured
+UTF-8 byte budget; invalid or normalized-empty text is rejected.
+
+Normalization affects only the matching copy. Accepted clinical text is preserved
+in the models and output. Workflow entry, review, and serialization use this same
+checker. This does not recognize bare names, resolve arbitrary cross-alphabet
+lookalikes, or remove every invisible Unicode character. No finding is not proof
+of anonymization.
+
 ## Patient names remain on the patient device
 
 A separate patient-name field may support an additional local frontend check:
@@ -94,6 +110,11 @@ people. The backend explicit-cue rule also misses bare names, such as the invent
 sentence `Mara Quill reports a headache.` A result without findings means only
 that none of these documented rules matched; it is not permission to send arbitrary
 free text to central services.
+
+Broader name detection would likely require an NLP named-entity recognizer,
+with additional model dependencies and evaluation of missed names and clinical
+false positives. That approach remains pending maintainer agreement; it is not
+implemented or a guarantee of anonymization.
 
 ## Shared boundary functions
 

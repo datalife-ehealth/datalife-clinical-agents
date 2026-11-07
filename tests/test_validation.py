@@ -142,3 +142,40 @@ def test_default_size_limit_rejects_large_input_before_scanning(checker):
 def test_size_limit_configuration_must_be_positive_integer(limit):
     with pytest.raises(ValueError, match="^max_text_bytes must be a positive integer$"):
         PIIBoundaryChecker(max_text_bytes=limit)
+
+
+@pytest.mark.parametrize("text,category", [
+    ("synthetic@exam\u200bple.com", BoundaryCategory.EMAIL),
+    ("synthetic\uff20example\uff0ecom", BoundaryCategory.EMAIL),
+    ("202-555-01\u200b98", BoundaryCategory.PHONE),
+    ("\uff12\uff10\uff12-\uff15\uff15\uff15-\uff10\uff11\uff19\uff18", BoundaryCategory.PHONE),
+    ("000-12-34\u200b56", BoundaryCategory.GOVERNMENT_ID),
+    ("My na\u200bme is Mara Quill", BoundaryCategory.PATIENT_NAME),
+    ("synthetic@\u0435x\u0430mpl\u0435.com", BoundaryCategory.EMAIL),
+    ("synthetic@\u041a\u041e.example", BoundaryCategory.EMAIL),
+    ("My n\u0430m\u0435 is Mara Quill", BoundaryCategory.PATIENT_NAME),
+])
+def test_normalization_reveals_disguised_identifiers(checker, text, category):
+    assert category in {finding.category for finding in checker.check_text(text).findings}
+    with pytest.raises(BoundaryValidationError, match="^text_boundary_rejected$"):
+        checker.require_text(text)
+
+
+def test_normalization_cannot_shrink_oversized_input_past_the_limit():
+    checker = PIIBoundaryChecker(max_text_bytes=4)
+    assert checker.check_text("a\u200b\u200b").findings[0].category is BoundaryCategory.INPUT_TOO_LARGE
+
+
+@pytest.mark.parametrize("text,limit", [("\ufdfa", 3), ("\u0344", 2)])
+def test_normalization_expansion_respects_character_and_byte_limits(text, limit):
+    # U+FDFA expands in characters; U+0344 expands from two to four UTF-8 bytes.
+    result = PIIBoundaryChecker(max_text_bytes=limit).check_text(text)
+    assert result.findings[0].category is BoundaryCategory.INPUT_TOO_LARGE
+
+
+def test_normalized_empty_text_is_invalid(checker):
+    assert checker.check_text("\u200b").findings[0].category is BoundaryCategory.INVALID_INPUT
+
+
+def test_runtime_normalization_uses_configured_limit_instead_of_tools_default(checker):
+    assert not checker.check_text("a" * 10_001).has_violations
