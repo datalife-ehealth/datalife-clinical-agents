@@ -48,7 +48,7 @@ def serialize_approved_candidate(
                 raise BoundaryValidationError("payload_too_large")
             chunks.append(chunk)
         return validate_ingestion_envelope({
-            "subject_key": session.subject_key,
+            "subject_key": str(session.subject_key),
             "kind": "json",
             "media_type": "application/json",
             "body": "".join(chunks),

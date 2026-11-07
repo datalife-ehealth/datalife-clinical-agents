@@ -12,7 +12,7 @@ and its
 
 | Field | Rule |
 | --- | --- |
-| `subject_key` | Required strict string, 4 to 64 characters, not whitespace-only. |
+| `subject_key` | Required canonical lowercase, hyphenated UUIDv4 string (36 characters). |
 | `kind` | Literal `"json"`, supplied by default. |
 | `media_type` | Literal `"application/json"`, supplied by default. |
 | `body` | Required strict string containing one JSON object. |
@@ -21,6 +21,14 @@ These are the only permitted outer fields. There is no extra outer
 `schema_version`: the `V1` class names this envelope contract, while intake content
 versioning belongs inside `body`. There are no `body_dict` or `body_serialized`
 fields. Keeping one body avoids having two representations that can disagree.
+
+The subject-key format is a local intake restriction within the core's broader
+string contract. `SessionInputV1` holds a typed UUIDv4; the serializer converts
+that bound key to a string. Direct envelope construction also rejects names,
+emails, phone numbers, other UUID versions, and noncanonical UUID spellings.
+The key must be randomly generated and reused by the patient client, with its
+identity mapping kept on the patient-controlled device. Format validation alone
+does not prove ownership or that the UUID was generated randomly.
 
 The core accepts JSON objects and arrays; this intake envelope deliberately
 requires an object. It rejects malformed JSON, duplicate keys at any depth,
@@ -45,7 +53,7 @@ body_text = json.dumps(
     allow_nan=False,
 )
 envelope = IngestionEnvelopeV1(
-    subject_key="synthetic-subject-001",
+    subject_key="b4c3c202-31f4-4f10-8b49-0d067a2fc1e8",
     body=body_text,
 )
 

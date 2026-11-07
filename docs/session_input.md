@@ -18,13 +18,13 @@ does not create IDs or read the clock.
 
 ```python
 from datetime import datetime, timezone
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from datalife_clinical_agents.schemas import SessionInputV1
 
 # Invented data only. A real subject key must come from the patient client.
 session = SessionInputV1(
-    subject_key="synthetic-subject-001",
+    subject_key=UUID("b4c3c202-31f4-4f10-8b49-0d067a2fc1e8"),
     intake_input={"raw_text": "I have had a headache for three days."},
     session_metadata={
         "session_id": uuid4(),
@@ -45,9 +45,12 @@ Those checks belong in trusted workflow code.
 - `schema_version` defaults to the literal string `"1"` and is included in normal
   serialization. Other versions fail validation. Versioning is independent of the
   package version. Breaking contract changes should introduce a new version.
-- `subject_key` is required, is not generated here, and must be 4 to 64 characters,
-  matching the core ingestion request. Whitespace-only keys are also rejected.
-  A valid string is not proof that it is an authorized, nonidentifying subject key.
+- `subject_key` is required and uses Pydantic's `UUID4` type. Trusted patient-client
+  code generates a random UUIDv4 once and reuses it across that patient's sessions;
+  validation never generates or replaces it. Names, emails, phone numbers, and
+  UUIDs of other versions are rejected. Do not derive a UUID from patient details.
+  The identity-to-key mapping stays on the patient-controlled device. UUID format
+  validation cannot prove random generation, ownership, or authorization.
 - `intake_input.raw_text` is required and rejects empty, whitespace-only, and
   non-string values. The original text is preserved, including whitespace.
 - `modality` defaults to `Modality.TEXT`. `Modality.AUDIO` means an existing audio
@@ -61,9 +64,16 @@ a `Modality` enum when overriding the default modality. Use
 values necessarily have string representations in that format. Passing those
 JSON strings through `model_validate(...)` is not the same operation.
 
-The core constraint is defined in
+This is intentionally narrower than the core's general string subject-key
+constraint, defined in
 [`IngestRequest`](https://github.com/datalife-ehealth/datalife-datalake-core/blob/main/src/api/routes/ingestion.py).
 No core endpoint is called during validation or tests.
+
+JSON input represents the key as a UUID string; the session stores a `UUID`
+object and serializes it as a string. The outgoing envelope uses the canonical
+lowercase, hyphenated string, preserving the core's string field type. Existing
+arbitrary string subject keys no longer validate; any migration must explicitly
+preserve patient linkage on the client rather than silently generating new keys.
 
 ## Privacy and remaining boundaries
 

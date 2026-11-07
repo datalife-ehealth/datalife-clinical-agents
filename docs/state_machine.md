@@ -110,7 +110,7 @@ from datalife_clinical_agents.state_machine import StateMachine
 session_id = UUID(int=1)
 revision_id = UUID(int=2)
 session = SessionInputV1(
-    subject_key="synthetic-subject-001",
+    subject_key=UUID("b4c3c202-31f4-4f10-8b49-0d067a2fc1e8"),
     intake_input={"raw_text": "Synthetic report: headache for three days."},
     session_metadata={
         "session_id": session_id, "timestamp": datetime(2026, 1, 1, tzinfo=timezone.utc),

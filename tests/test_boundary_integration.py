@@ -28,7 +28,7 @@ TIME = datetime(2026, 1, 1, tzinfo=timezone.utc)
 
 def session():
     return SessionInputV1(
-        subject_key="synthetic-subject-001",
+        subject_key=UUID("b4c3c202-31f4-4f10-8b49-0d067a2fc1e8"),
         intake_input={"raw_text": "Synthetic report: headache for three days."},
         session_metadata={"session_id": SESSION, "timestamp": TIME},
     )
@@ -227,7 +227,7 @@ def test_approved_session_serializes_exact_core_shape_without_network(monkeypatc
     approved = approve(machine)
     envelope = serialize_approved_candidate(machine, expected_revision_id=REVISION)
     assert set(envelope.model_dump()) == {"subject_key", "kind", "media_type", "body"}
-    assert envelope.subject_key == session().subject_key
+    assert envelope.subject_key == str(session().subject_key)
     assert envelope.kind == "json"
     assert envelope.media_type == "application/json"
     assert isinstance(envelope.body, str)
@@ -259,7 +259,7 @@ def test_mixed_observations_match_literal_v1_ingestion_fixture():
     fixture = Path(__file__).parent / "fixtures" / "approved_mixed_intake_v1.json"
     expected_body = json.loads(fixture.read_text(encoding="utf-8"))
     assert envelope.model_dump(exclude={"body"}) == {
-        "subject_key": "synthetic-subject-001",
+        "subject_key": "b4c3c202-31f4-4f10-8b49-0d067a2fc1e8",
         "kind": "json",
         "media_type": "application/json",
     }
@@ -319,28 +319,49 @@ def test_external_snapshot_changes_cannot_change_serialized_subject_or_content()
     machine.session_input.subject_key = "synthetic-other-subject"
     approved.observations[0].value_unit.symptom = "Contact synthetic@example.com"
     envelope = serialize_approved_candidate(machine, expected_revision_id=REVISION)
-    assert envelope.subject_key == "synthetic-subject-001"
+    assert envelope.subject_key == "b4c3c202-31f4-4f10-8b49-0d067a2fc1e8"
     assert json.loads(envelope.body)["observations"][0]["value_unit"]["symptom"] == "headache"
+
+
+@pytest.mark.parametrize("key", [
+    "synthetic@example.com", "202-555-0198", "Mara Quill",
+    UUID("b4c3c202-31f4-1f10-8b49-0d067a2fc1e8"),
+])
+def test_invalid_subject_keys_cannot_enter_workflow_or_serialize(key):
+    source = session()
+    source.subject_key = key  # Simulate an unvalidated update to a typed snapshot.
+    with pytest.raises(BoundaryValidationError, match="^invalid_session_input$") as caught:
+        validate_session_input(source)
+    assert str(key) not in str(caught.value)
+    with pytest.raises(WorkflowError, match="^session_boundary_rejected$"):
+        workflow(source=source)
+
+    machine = workflow()
+    approve(machine)
+    # Simulate corrupted internal state to verify the final gate revalidates it.
+    machine._session.subject_key = key
+    with pytest.raises(SerializationError, match="^serialization_boundary_rejected$"):
+        serialize_approved_candidate(machine, expected_revision_id=REVISION)
 
 
 def test_core_byte_limit_counts_utf8_and_accepts_exact_boundary():
     body = json.dumps({"text": "é"}, ensure_ascii=False)
     size = len(body.encode("utf-8"))
-    data = {"subject_key": "synthetic-subject-001", "body": body}
+    data = {"subject_key": "b4c3c202-31f4-4f10-8b49-0d067a2fc1e8", "body": body}
     assert validate_ingestion_envelope(data, limits=ValidationLimits(max_body_bytes=size)).body == body
     with pytest.raises(BoundaryValidationError, match="^payload_too_large$"):
         validate_ingestion_envelope(data, limits=ValidationLimits(max_body_bytes=size - 1))
 
 
 def test_core_node_limit_counts_values_and_containers_but_not_keys():
-    data = {"subject_key": "synthetic-subject-001", "body": '{"values":[1,2]}'}
+    data = {"subject_key": "b4c3c202-31f4-4f10-8b49-0d067a2fc1e8", "body": '{"values":[1,2]}'}
     assert validate_ingestion_envelope(data, limits=ValidationLimits(max_nodes=4)).body == data["body"]
     with pytest.raises(BoundaryValidationError, match="^payload_node_limit$"):
         validate_ingestion_envelope(data, limits=ValidationLimits(max_nodes=3))
 
 
 def test_core_depth_limit_includes_scalar_leaves():
-    data = {"subject_key": "synthetic-subject-001", "body": '{"value":{"nested":0}}'}
+    data = {"subject_key": "b4c3c202-31f4-4f10-8b49-0d067a2fc1e8", "body": '{"value":{"nested":0}}'}
     assert validate_ingestion_envelope(data, limits=ValidationLimits(max_depth=3)).body == data["body"]
     with pytest.raises(BoundaryValidationError, match="^payload_depth_limit$"):
         validate_ingestion_envelope(data, limits=ValidationLimits(max_depth=2))
@@ -348,12 +369,12 @@ def test_core_depth_limit_includes_scalar_leaves():
 
 def test_depth_prescan_ignores_brackets_and_escaped_quotes_inside_strings():
     body = json.dumps({"text": 'Brackets [{ and an escaped quote " are text.'})
-    data = {"subject_key": "synthetic-subject-001", "body": body}
+    data = {"subject_key": "b4c3c202-31f4-4f10-8b49-0d067a2fc1e8", "body": body}
     assert validate_ingestion_envelope(data, limits=ValidationLimits(max_depth=2)).body == body
 
 
 def test_extreme_json_nesting_is_rejected_before_recursive_decode():
-    data = {"subject_key": "synthetic-subject-001", "body": '{"nested":' + '[' * 2_000 + '0' + ']' * 2_000 + '}'}
+    data = {"subject_key": "b4c3c202-31f4-4f10-8b49-0d067a2fc1e8", "body": '{"nested":' + '[' * 2_000 + '0' + ']' * 2_000 + '}'}
     with pytest.raises(BoundaryValidationError, match="^payload_depth_limit$"):
         validate_ingestion_envelope(data)
 
@@ -361,7 +382,7 @@ def test_extreme_json_nesting_is_rejected_before_recursive_decode():
 @pytest.mark.parametrize("body", ['{"value":"\\ud800"}', '{"\\ud800":0}'])
 def test_decoded_lone_surrogates_are_rejected(body):
     with pytest.raises(BoundaryValidationError, match="^invalid_text_encoding$"):
-        validate_ingestion_envelope({"subject_key": "synthetic-subject-001", "body": body})
+        validate_ingestion_envelope({"subject_key": "b4c3c202-31f4-4f10-8b49-0d067a2fc1e8", "body": body})
 
 
 def test_large_correction_is_bounded_before_cloning_observations():
@@ -418,7 +439,7 @@ def test_final_serialized_byte_limit_includes_json_overhead():
 
 def test_unknown_outer_envelope_action_is_rejected():
     with pytest.raises(BoundaryValidationError, match="^invalid_ingestion_envelope$"):
-        validate_ingestion_envelope({"subject_key": "synthetic-subject-001", "body": "{}", "action": "write"})
+        validate_ingestion_envelope({"subject_key": "b4c3c202-31f4-4f10-8b49-0d067a2fc1e8", "body": "{}", "action": "write"})
 
 
 def test_rejection_paths_do_not_log_reports_or_sensitive_errors(capsys, caplog):

@@ -21,7 +21,7 @@ REVIEWER = "synthetic-patient-001"
 
 def session():
     return SessionInputV1(
-        subject_key="synthetic-subject-001",
+        subject_key=UUID("b4c3c202-31f4-4f10-8b49-0d067a2fc1e8"),
         intake_input={"raw_text": "Synthetic headache report."},
         session_metadata={"session_id": SESSION, "timestamp": datetime(2026, 1, 1, tzinfo=timezone.utc)},
     )

@@ -11,7 +11,7 @@ from datalife_clinical_agents.schemas import IngestionEnvelopeV1
 @pytest.fixture
 def envelope_data():
     return {
-        "subject_key": "synthetic-subject-001",
+        "subject_key": "b4c3c202-31f4-4f10-8b49-0d067a2fc1e8",
         "body": '{"schema_version":"1","observations":[]}',
     }
 
@@ -35,7 +35,18 @@ def test_envelope_requires_explicit_input(envelope_data, field):
     assert caught.value.errors()[0]["type"] == "missing"
 
 
-@pytest.mark.parametrize("subject", ["", "abc", "    ", "x" * 65, 1, b"subj-001", None])
+@pytest.mark.parametrize("subject", [
+    "", "abc", "    ", "x" * 65, 1, b"subj-001", None,
+    "synthetic@example.com", "202-555-0198", "Mara Quill",
+    "b4c3c202-31f4-1f10-8b49-0d067a2fc1e8",
+    "b4c3c202-31f4-3f10-8b49-0d067a2fc1e8",
+    "b4c3c202-31f4-5f10-8b49-0d067a2fc1e8",
+    "00000000-0000-0000-0000-000000000000",
+    "B4C3C202-31F4-4F10-8B49-0D067A2FC1E8",
+    "b4c3c20231f44f108b490d067a2fc1e8",
+    "{b4c3c202-31f4-4f10-8b49-0d067a2fc1e8}",
+    "urn:uuid:b4c3c202-31f4-4f10-8b49-0d067a2fc1e8",
+])
 def test_rejects_invalid_subject_key(envelope_data, subject):
     envelope_data["subject_key"] = subject
     with pytest.raises(ValidationError) as caught:
@@ -43,8 +54,11 @@ def test_rejects_invalid_subject_key(envelope_data, subject):
     assert caught.value.errors()[0]["loc"] == ("subject_key",)
 
 
-@pytest.mark.parametrize("subject", ["s" * 4, "s" * 64])
-def test_accepts_subject_key_length_boundaries(envelope_data, subject):
+@pytest.mark.parametrize("subject", [
+    "b4c3c202-31f4-4f10-8b49-0d067a2fc1e8",
+    "a3d78675-4d22-4231-9b86-58c0bd60ab9f",
+])
+def test_accepts_canonical_uuid4_subject_string(envelope_data, subject):
     envelope_data["subject_key"] = subject
     assert IngestionEnvelopeV1.model_validate(envelope_data).subject_key == subject
 

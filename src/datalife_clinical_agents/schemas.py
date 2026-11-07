@@ -11,6 +11,7 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
+    UUID4,
     field_validator,
     model_validator,
 )
@@ -65,16 +66,12 @@ class SessionInputV1(Arguments):
     """A submitted session; validity does not grant approval or ingestion rights."""
 
     schema_version: Literal["1"] = "1"
-    subject_key: str = Field(min_length=4, max_length=64, repr=False)
+    subject_key: UUID4 = Field(
+        repr=False,
+        description="Stable random UUIDv4 from the patient client; never derived from identity.",
+    )
     intake_input: IntakeInput
     session_metadata: SessionMetaData
-
-    @field_validator("subject_key")
-    @classmethod
-    def require_nonblank_subject_key(cls, value: str) -> str:
-        if not value.strip():
-            raise ValueError("subject key must not be blank")
-        return value
 
 # Observations
 class ObservationProvenance(Arguments):
@@ -292,10 +289,10 @@ class IngestionEnvelopeV1(Arguments):
     """Core-compatible JSON request shape; does not authorize or perform ingestion."""
 
     subject_key: str = Field(
-        min_length=4,
-        max_length=64,
+        min_length=36,
+        max_length=36,
         repr=False,
-        description="Opaque patient-client subject key, verified by trusted application code.",
+        description="Canonical lowercase UUIDv4 string from the bound patient-client session.",
     )
     kind: Literal["json"] = Field(
         default="json", description="Only JSON ingestion is supported by this contract.",
@@ -311,9 +308,13 @@ class IngestionEnvelopeV1(Arguments):
 
     @field_validator("subject_key")
     @classmethod
-    def require_nonblank_subject_key(cls, value: str) -> str:
-        if not value.strip():
-            raise ValueError("subject key must not be blank")
+    def require_uuid4_subject_key(cls, value: str) -> str:
+        try:
+            key = UUID(value)
+        except ValueError:
+            raise ValueError("subject key must be a canonical UUIDv4 string") from None
+        if key.version != 4 or str(key) != value:
+            raise ValueError("subject key must be a canonical UUIDv4 string")
         return value
 
     @field_validator("body")

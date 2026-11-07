@@ -28,7 +28,7 @@ The outer request contains exactly:
 
 | Field | Value |
 | --- | --- |
-| `subject_key` | The opaque key from the workflow's bound source session. |
+| `subject_key` | Canonical UUIDv4 string from the workflow's bound source session. |
 | `kind` | `"json"`. |
 | `media_type` | `"application/json"`. |
 | `body` | A string containing the JSON representation of the approved `CandidateIntakeV1`. |
@@ -38,6 +38,8 @@ parent reference, observation versions and types, self-report provenance,
 uncertainty, extraction provenance, approved status, and revision-bound human review.
 It excludes the source report and does not copy `SessionInputV1` into the body.
 The subject key appears only in the outer envelope.
+The serializer converts the session's typed UUIDv4 with `str(...)`; it never
+generates a replacement key or accepts one supplied separately by the caller.
 
 This is a local clinical-agents body contract within the core's general JSON
 ingestion contract. It does not assume the core implements candidate-specific
@@ -65,7 +67,7 @@ from datalife_clinical_agents.state_machine import StateMachine
 session_id, revision_id = UUID(int=1), UUID(int=2)
 timestamp = datetime(2026, 1, 1, tzinfo=timezone.utc)
 source = SessionInputV1(
-    subject_key="synthetic-subject-001",
+    subject_key=UUID("b4c3c202-31f4-4f10-8b49-0d067a2fc1e8"),
     intake_input={"raw_text": "Synthetic report: headache for three days."},
     session_metadata={"session_id": session_id, "timestamp": timestamp},
 )

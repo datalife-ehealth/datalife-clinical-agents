@@ -17,7 +17,7 @@ from datalife_clinical_agents.schemas import (
 @pytest.fixture
 def session_data():
     return {
-        "subject_key": "synthetic-subject-001",
+        "subject_key": UUID("b4c3c202-31f4-4f10-8b49-0d067a2fc1e8"),
         "intake_input": {"raw_text": "I have had a headache for three days."},
         "session_metadata": {
             "session_id": UUID("00000000-0000-4000-8000-000000000001"),
@@ -68,17 +68,39 @@ def test_preserves_original_whitespace():
     assert IntakeInput(raw_text=report).raw_text == report
 
 
-@pytest.mark.parametrize("key", ["", "abc", "    ", "x" * 65, 123, b"subj-001"])
+@pytest.mark.parametrize("key", [
+    "", "abc", "    ", "x" * 65, 123, b"subj-001", None,
+    "synthetic@example.com", "202-555-0198", "Mara Quill",
+    "b4c3c202-31f4-4f10-8b49-0d067a2fc1e8",  # Python mode requires a UUID object.
+    UUID("b4c3c202-31f4-1f10-8b49-0d067a2fc1e8"),
+    UUID("b4c3c202-31f4-3f10-8b49-0d067a2fc1e8"),
+    UUID("b4c3c202-31f4-5f10-8b49-0d067a2fc1e8"), UUID(int=0),
+])
 def test_rejects_invalid_subject_keys(session_data, key):
     session_data["subject_key"] = key
     with pytest.raises(ValidationError):
         SessionInputV1.model_validate(session_data)
 
 
-@pytest.mark.parametrize("key", ["s" * 4, "s" * 64])
-def test_accepts_core_subject_key_length_boundaries(session_data, key):
+@pytest.mark.parametrize("key", [
+    UUID("b4c3c202-31f4-4f10-8b49-0d067a2fc1e8"),
+    UUID("a3d78675-4d22-4231-9b86-58c0bd60ab9f"),
+])
+def test_accepts_explicit_uuid4_subject_key(session_data, key):
     session_data["subject_key"] = key
     assert SessionInputV1.model_validate(session_data).subject_key == key
+
+
+@pytest.mark.parametrize("key", [
+    "synthetic@example.com", "202-555-0198", "Mara Quill",
+    "b4c3c202-31f4-1f10-8b49-0d067a2fc1e8",
+    "b4c3c202-31f4-5f10-8b49-0d067a2fc1e8",
+])
+def test_json_subject_key_rejects_identifiers_and_other_uuid_versions(session_data, key):
+    data = SessionInputV1.model_validate(session_data).model_dump(mode="json")
+    data["subject_key"] = key
+    with pytest.raises(ValidationError):
+        SessionInputV1.model_validate_json(json.dumps(data))
 
 
 @pytest.mark.parametrize("path", [(), ("intake_input",), ("session_metadata",)])
@@ -141,7 +163,7 @@ def test_identical_input_keeps_identical_session_identity(session_data):
 def test_normal_representation_omits_sensitive_content(session_data):
     session = SessionInputV1.model_validate(session_data)
     assert session.intake_input.raw_text not in repr(session)
-    assert session.subject_key not in repr(session)
+    assert str(session.subject_key) not in repr(session)
 
 
 def test_validation_error_string_omits_rejected_value(session_data):

@@ -66,8 +66,11 @@ actually supply a name. It deliberately avoids matching `symptom name: headache`
 
 ZIP/city/gender/IP uniqueness heuristics, passport rules, credit-card rules, and
 general name recognition are not implemented. Unsupported categories are not
-listed as if they were detectors. The opaque subject key is handled by its trusted
-contract, and UUID session/revision IDs are not patient report text. Adapter and
+listed as if they were detectors. The subject key is restricted to UUIDv4 by the
+session schema and to a canonical UUIDv4 string by the envelope schema, rather
+than relying on incomplete name detection. The patient client must generate it
+randomly and preserve its identity mapping locally. UUID session/revision IDs
+are not patient report text. Adapter and
 reviewer string metadata are also screened before serialization because they
 appear inside the clinical JSON body; they must not contain recognizable direct
 identifiers such as an email address.

@@ -62,6 +62,12 @@ retry. Prompt text never grants privileges.
 
 ## Core API dependency
 
+The intake implementation requires a stable, randomly generated UUIDv4 subject
+key from the patient client. Sessions hold a typed UUID; outgoing envelopes use
+its canonical string form. This intentionally narrows the core's general string
+contract to prevent direct identifiers in subject metadata. Identity mappings
+remain on the patient-controlled device; see [session input](docs/session_input.md).
+
 The current reference integration is
 [`datalife-datalake-core`](https://github.com/datalife-ehealth/datalife-datalake-core):
 
