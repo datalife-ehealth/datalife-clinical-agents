@@ -285,8 +285,12 @@ class CandidateIntakeV1(Arguments):
         return self
 
 # Core ingestion envelope
-class IngestionEnvelopeV1(Arguments):
-    """Core-compatible JSON request shape; does not authorize or perform ingestion."""
+class CandidateIntakeEnvelopeV1(Arguments):
+    """Candidate-intake JSON subset of core IngestRequest, versioned locally.
+
+    XML and DICOM are outside this contract. Structural validity does not grant
+    approval or authorization, and this model does not perform ingestion.
+    """
 
     subject_key: str = Field(
         min_length=36,

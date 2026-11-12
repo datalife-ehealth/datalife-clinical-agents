@@ -1,6 +1,6 @@
 # Approved-candidate serialization
 
-`serialize_approved_candidate` builds an `IngestionEnvelopeV1` for reviewable output.
+`serialize_approved_candidate` builds an `CandidateIntakeEnvelopeV1` for reviewable output.
 It never sends an HTTP request, writes a database, changes workflow state, or
 automatically runs when the patient approves a revision.
 
@@ -22,6 +22,13 @@ requires current approval performed by this machine instance. A pre-approved
 snapshot loaded into a fresh instance is insufficient; restoring authorization
 across restarts would need a separately designed trusted mechanism.
 
+Native Pydantic `model_dump()` and `model_dump_json()` methods remain available
+for internal snapshots, round trips, and request fingerprinting. Their output is
+sensitive and is not ingestion-ready: do not log it or expose it to untrusted
+sinks. Future clinical persistence must consume the verified output of
+`serialize_approved_candidate(...)`, not raw candidates or dictionaries. Model
+serialization alone does not establish approval.
+
 ## Output contract
 
 The outer request contains exactly:
@@ -42,7 +49,12 @@ The serializer converts the session's typed UUIDv4 with `str(...)`; it never
 generates a replacement key or accepts one supplied separately by the caller.
 
 This is a local clinical-agents body contract within the core's general JSON
-ingestion contract. It does not assume the core implements candidate-specific
+ingestion contract. `CandidateIntakeEnvelopeV1` specifically represents the candidate
+JSON subset of core `IngestRequest`; it fixes `kind="json"` and
+`media_type="application/json"` because this serializer produces candidate JSON.
+It does not generate XML or DICOM. See the
+[envelope contract comparison](ingestion_envelope.md#relationship-to-core).
+It does not assume the core implements candidate-specific
 authorization. The core separately applies its own parsing and PII policy; local
 success is not a promise that a differently configured core will accept the output.
 

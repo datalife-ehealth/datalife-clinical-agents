@@ -1,11 +1,17 @@
-"""Build a candidate core envelope after workflow approval, without network writes."""
+"""Build a candidate core envelope after workflow approval, without network writes.
+
+Native model dumps remain internal/sensitive snapshots, not ingestion approval.
+Future clinical persistence must consume this function's verified output rather
+than raw candidate models or dictionaries. The PII baseline still misses prose
+names (RFC #1); this is not a comprehensive production clinical PII screen.
+"""
 
 import json
 from uuid import UUID
 
 from pydantic_core import PydanticSerializationError
 
-from .schemas import IngestionEnvelopeV1
+from .schemas import CandidateIntakeEnvelopeV1
 from .state_machine import StateMachine, WorkflowError
 from .validation import (
     BoundaryValidationError, validate_candidate, validate_ingestion_envelope,
@@ -19,7 +25,7 @@ class SerializationError(ValueError):
 
 def serialize_approved_candidate(
     workflow: StateMachine, *, expected_revision_id: UUID,
-) -> IngestionEnvelopeV1:
+) -> CandidateIntakeEnvelopeV1:
     """Recheck the approved current revision and return an envelope; never send it.
 
     Accept the trusted workflow, not an arbitrary externally supplied candidate

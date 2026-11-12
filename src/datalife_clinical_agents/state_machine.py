@@ -38,7 +38,11 @@ class StateMachine:
     def __init__(
         self, *, candidate_intake: CandidateIntakeV1, authorized_reviewer_id: str,
         session_input: SessionInputV1, limits: ValidationLimits = DEFAULT_LIMITS,
+        max_revisions: int = 100, max_operations: int = 1_000,
     ) -> None:
+        if any(type(value) is not int or value < 1
+               for value in (max_revisions, max_operations)):
+            raise WorkflowError("invalid_workflow_capacity")
         if not isinstance(authorized_reviewer_id, str) or not authorized_reviewer_id.strip():
             raise WorkflowError("invalid_authorized_reviewer")
         if not isinstance(limits, ValidationLimits):
@@ -50,6 +54,8 @@ class StateMachine:
         except BoundaryValidationError:
             raise WorkflowError("session_boundary_rejected") from None
         self._limits = limits
+        self._max_revisions = max_revisions
+        self._max_operations = max_operations
         try:
             self._candidate = validate_candidate(candidate_intake, session_input=self._session, limits=limits)
         except BoundaryValidationError as error:
@@ -225,6 +231,14 @@ class StateMachine:
             # Do not expose a structured Pydantic error containing clinical input.
             code = "candidate_validation_failed" if str(error) == "invalid_candidate" else "candidate_boundary_rejected"
             raise WorkflowError(code) from None
+
+        # Never evict history or receipts: forgetting them would weaken ID reuse
+        # checks and exact retries. Recorded retries return before these checks.
+        if len(self._operations) >= self._max_operations:
+            raise WorkflowError("operation_capacity_reached")
+        if (updated.revision_id not in self._revisions
+                and len(self._revisions) >= self._max_revisions):
+            raise WorkflowError("revision_capacity_reached")
 
         # All fallible validation happens before state or retry results are changed.
         history_snapshot = _snapshot(updated)

@@ -1,12 +1,30 @@
 # Ingestion envelope v1
 
-`IngestionEnvelopeV1` validates the outer JSON ingestion request shape. It does not
+`CandidateIntakeEnvelopeV1` validates the outer request shape for candidate-intake JSON.
+It does not
 create a payload from a candidate, approve observations, or send an HTTP request.
 
 The contract was checked against the core
 [`IngestRequest`](https://github.com/datalife-ehealth/datalife-datalake-core/blob/main/src/api/routes/ingestion.py)
 and its
 [payload parser](https://github.com/datalife-ehealth/datalife-datalake-core/blob/main/src/services/parsing.py).
+
+## Relationship to core
+
+| Field | Core `IngestRequest` | Local `CandidateIntakeEnvelopeV1` |
+| --- | --- | --- |
+| `subject_key` | String, 4 to 64 characters. | Canonical UUIDv4 string, 36 characters. |
+| `kind` | `json`, `xml`, or `dicom`. | Only `json`. |
+| `media_type` | String, default `application/octet-stream`. | Only `application/json`. |
+| `body` | Nonempty string; content parsing is a separate core responsibility. | String already checked to contain one valid JSON object. |
+
+This contract intentionally supports only the candidate JSON subset of core's
+`IngestRequest`; XML and DICOM are outside scope. Core validation still applies.
+`V1` versions this local envelope contract, not the core API.
+
+The previous name `IngestionEnvelopeV1` has been replaced by
+`CandidateIntakeEnvelopeV1`; update imports and type annotations. The serialized
+outer fields are unchanged.
 
 ## Fields
 
@@ -45,14 +63,14 @@ value exists, rather than during class definition. For example:
 ```python
 import json
 
-from datalife_clinical_agents.schemas import IngestionEnvelopeV1
+from datalife_clinical_agents.schemas import CandidateIntakeEnvelopeV1
 
 # A structural example only, not an approved or ingestible intake candidate.
 body_text = json.dumps(
     {"schema_version": "1", "observations": []},
     allow_nan=False,
 )
-envelope = IngestionEnvelopeV1(
+envelope = CandidateIntakeEnvelopeV1(
     subject_key="b4c3c202-31f4-4f10-8b49-0d067a2fc1e8",
     body=body_text,
 )

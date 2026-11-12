@@ -154,6 +154,40 @@ assert approved.observations[0].uncertainty.is_uncertain is True
 
 ## Limits and failure behavior
 
+Each instance has two configurable capacities, supplied as constructor keyword
+arguments. Both must be positive integers (booleans are rejected):
+
+| Setting | Default | What counts |
+| --- | --- | --- |
+| `max_revisions` | 100 | Initial candidate counts as one; each changed correction adds one. |
+| `max_operations` | 1,000 | Each successful new operation ID, including unchanged saves. |
+
+For example, `StateMachine(..., max_revisions=50, max_operations=500)` limits that
+instance to 50 content revisions and 500 successful operation receipts. These
+are local reference defaults, not core API limits or measured deployment budgets.
+Choose capacities for the expected session size and available memory.
+
+When a new request would exceed a capacity, it fails with
+`revision_capacity_reached` or `operation_capacity_reached`. Current state,
+approval eligibility, history, and retry receipts remain unchanged. Failed
+requests do not consume capacity or reserve an operation ID. An unchanged save
+does not create a revision, but its new operation receipt still consumes a slot.
+
+No entries are evicted and there is no TTL: exact retries remain available even
+at capacity, including delayed retries for older revisions. Reusing a recorded
+operation ID for different arguments still fails. At the revision limit,
+submission, approval, rejection, cancellation, and unchanged saves can continue
+if operation slots remain. At the operation limit, all new operations stop;
+current snapshots and already-authorized serialization remain available.
+Configure enough operation slots for expected editing and final review. Do not
+silently create a fresh machine to bypass a limit: that loses retry history and
+does not restore approval authority. The hosting application must handle a
+capacity error explicitly.
+
+These count limits combine with the existing per-payload resource limits to
+bound retained history and receipts for one instance. They are not an exact RAM
+budget or a limit on how many instances a hosting application may keep alive.
+
 The machine reads no clock and generates no UUIDs. Trusted callers supply those
 values once, so identical initial candidates, configuration, and operation inputs
 produce identical results. Every transition constructs and validates a complete
@@ -162,9 +196,9 @@ clinical content or identifiers, and the module performs no logging.
 
 One instance tracks one candidate. Calls must be serialized by its owner; this is
 not a transaction across threads or workers. Revision and retry records exist
-only for this instance's lifetime, consume memory, and are not restored by creating
+only for this instance's lifetime, have the capacities above, and are not restored by creating
 a fresh machine from a snapshot. They are not a new audit subsystem. Distributed
-concurrency, durable retry storage, permission revocation, and retention policy
+concurrency, durable retry storage, permission revocation, and cross-instance lifecycle management
 belong to a later hosting integration, not this offline reference module.
 
 `validation.py` now applies the typed boundary and text checks. Pending review

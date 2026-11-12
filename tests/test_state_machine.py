@@ -10,6 +10,7 @@ from datalife_clinical_agents.schemas import (
     CandidateIntakeV1, HumanReview, ObservationV1, ReviewStatus, SessionInputV1,
 )
 from datalife_clinical_agents.state_machine import StateMachine, WorkflowError
+from datalife_clinical_agents.serializer import serialize_approved_candidate
 
 
 SESSION = UUID(int=1)
@@ -59,11 +60,12 @@ def candidate(status=ReviewStatus.DRAFT, *, observations=None):
     return CandidateIntakeV1.model_validate(data)
 
 
-def machine(status=ReviewStatus.DRAFT, *, observations=None):
+def machine(status=ReviewStatus.DRAFT, *, observations=None, **capacity):
     return StateMachine(
         candidate_intake=candidate(status, observations=observations),
         authorized_reviewer_id=REVIEWER,
         session_input=session(),
+        **capacity,
     )
 
 
@@ -337,3 +339,84 @@ def test_failure_does_not_echo_submitted_content():
             operation_id=OPERATION, expected_revision_id=REVISION,
         )
     assert str(caught.value) == "unauthorized_reviewer"
+
+
+@pytest.mark.parametrize("setting", ["max_revisions", "max_operations"])
+@pytest.mark.parametrize("value", [0, -1, True, "10", 1.5, None])
+def test_workflow_capacity_requires_positive_integers(setting, value):
+    with pytest.raises(WorkflowError, match="^invalid_workflow_capacity$"):
+        machine(**{setting: value})
+
+
+def test_revision_capacity_counts_initial_revision_and_does_not_consume_failed_receipt():
+    workflow = machine(max_revisions=2)
+    first = invoke(workflow, "correct")
+    before_history = workflow.revision_history
+    before_operations = workflow._operations.copy()
+    for index in range(5):
+        with pytest.raises(WorkflowError, match="^revision_capacity_reached$"):
+            workflow.correct(
+                UUID(int=100 + index), [observation("another synthetic symptom")],
+                operation_id=UUID(int=20), expected_revision_id=NEW_REVISION,
+            )
+        assert workflow.candidate_intake == first
+        assert workflow.revision_history == before_history
+        assert workflow._operations == before_operations
+    assert invoke(workflow, "correct") == first  # Original correction retry still works.
+    # Failed attempts did not reserve the operation ID. Reviewing stays possible.
+    pending = workflow.submit_for_review(
+        operation_id=UUID(int=20), expected_revision_id=NEW_REVISION,
+    )
+    approved = workflow.approve(
+        review(revision_id=NEW_REVISION), operation_id=UUID(int=21),
+        expected_revision_id=NEW_REVISION,
+    )
+    assert pending.review_status is ReviewStatus.PENDING
+    assert workflow.get_approved_candidate(expected_revision_id=NEW_REVISION) == approved
+    assert len(workflow.revision_history) == 2
+
+
+def test_noop_correction_at_revision_capacity_uses_only_operation_capacity():
+    workflow = machine(max_revisions=1, max_operations=1)
+    original = workflow.candidate_intake
+    args = {"operation_id": OPERATION, "expected_revision_id": REVISION}
+    assert workflow.correct(NEW_REVISION, original.observations, **args) == original
+    assert workflow.correct(NEW_REVISION, original.observations, **args) == original
+    with pytest.raises(WorkflowError, match="^operation_capacity_reached$"):
+        invoke(workflow, "submit", operation_id=UUID(int=11))
+    assert workflow.candidate_intake == original
+    assert workflow.revision_history == (original,)
+    assert len(workflow._operations) == 1
+
+
+def test_operation_capacity_preserves_state_history_and_delayed_retries():
+    workflow = machine(max_revisions=2, max_operations=2)
+    pending = invoke(workflow, "submit")
+    corrected = invoke(workflow, "correct", operation_id=UUID(int=11))
+    history = workflow.revision_history
+    receipts = workflow._operations.copy()
+    for index in range(5):
+        with pytest.raises(WorkflowError, match="^operation_capacity_reached$"):
+            invoke(workflow, "submit", operation_id=UUID(int=100 + index),
+                   expected_revision_id=NEW_REVISION)
+        assert workflow.candidate_intake == corrected
+        assert workflow.revision_history == history
+        assert workflow._operations == receipts
+    assert invoke(workflow, "submit") == pending
+    assert invoke(workflow, "correct", operation_id=UUID(int=11)) == corrected
+    assert workflow.candidate_intake == corrected
+    with pytest.raises(WorkflowError, match="^operation_id_conflict$"):
+        invoke(workflow, "cancel")
+
+
+def test_approval_at_exact_operation_capacity_remains_available_for_serialization():
+    workflow = machine(max_operations=2)
+    invoke(workflow, "submit")
+    approved = invoke(workflow, "approve", operation_id=UUID(int=11))
+    assert workflow.get_approved_candidate(expected_revision_id=REVISION) == approved
+    assert invoke(workflow, "approve", operation_id=UUID(int=11)) == approved
+    envelope = serialize_approved_candidate(workflow, expected_revision_id=REVISION)
+    assert envelope.body == serialize_approved_candidate(
+        workflow, expected_revision_id=REVISION,
+    ).body
+    assert len(workflow._operations) == 2

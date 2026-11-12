@@ -1,4 +1,9 @@
-"""Bounded, offline rejection checks; no redaction or raw-value reflection."""
+"""Bounded, offline rejection checks; no redaction or raw-value reflection.
+
+RFC #1's direct-name requirement remains an open limitation: explicit-cue rules
+miss names embedded in prose. This research/reference package must not be relied
+upon as a comprehensive PII screen for production clinical ingestion.
+"""
 
 import json
 import re
@@ -9,7 +14,7 @@ from typing import Literal
 from pydantic import BaseModel, ValidationError
 
 from .schemas import (
-    CandidateIntakeV1, IngestionEnvelopeV1, ObservationV1, SessionInputV1, SymptomValue,
+    CandidateIntakeV1, CandidateIntakeEnvelopeV1, ObservationV1, SessionInputV1, SymptomValue,
 )
 from .text_policy_normalization import normalize_for_policy_match
 
@@ -302,9 +307,9 @@ def _require_json_depth(body: str, maximum: int) -> None:
 
 def validate_ingestion_envelope(
     value: object, *, limits: ValidationLimits = DEFAULT_LIMITS,
-) -> IngestionEnvelopeV1:
+) -> CandidateIntakeEnvelopeV1:
     """Check transport syntax and core resource limits; does not establish approval."""
-    if isinstance(value, IngestionEnvelopeV1):
+    if isinstance(value, CandidateIntakeEnvelopeV1):
         body = value.body
     elif isinstance(value, dict):
         body = value.get("body")
@@ -316,7 +321,7 @@ def validate_ingestion_envelope(
     _require_json_depth(body, limits.max_depth)
     try:
         # The envelope schema checks duplicate keys, finite numbers, and object root.
-        envelope = IngestionEnvelopeV1.model_validate(value)
+        envelope = CandidateIntakeEnvelopeV1.model_validate(value)
         parsed = json.loads(envelope.body)
     except (ValidationError, ValueError, RecursionError):
         raise BoundaryValidationError("invalid_ingestion_envelope") from None

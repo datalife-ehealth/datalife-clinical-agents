@@ -114,10 +114,11 @@ sentence `Mara Quill reports a headache.` A result without findings means only
 that none of these documented rules matched; it is not permission to send arbitrary
 free text to central services.
 
-Broader name detection would likely require an NLP named-entity recognizer,
-with additional model dependencies and evaluation of missed names and clinical
-false positives. That approach remains pending maintainer agreement; it is not
-implemented or a guarantee of anonymization.
+The direct-name requirement in [RFC #1](https://github.com/datalife-ehealth/datalife-clinical-agents/issues/1)
+remains an open limitation. This research/reference package must not be represented
+or relied upon as a comprehensive PII screen for production clinical ingestion.
+Generalized NER is deferred to a separate roadmap issue; no NLP models or
+capitalization heuristics are added to this boundary layer.
 
 ## Shared boundary functions
 
