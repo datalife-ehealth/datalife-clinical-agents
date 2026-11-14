@@ -55,6 +55,47 @@ def test_rejects_explicit_name_cues_without_a_name_glossary(checker, text):
 
 
 @pytest.mark.parametrize("text", [
+    "MRN: 00012345", "MRN#00012345", "mrn # SYNTHETIC-A12",
+    "Medical Record Number: SYNTHETIC-0001",
+    "medical record number # 00012345",
+    "Report\nMRN : SYNTHETIC-A12", "Medical\nRecord Number: 00012345",
+    "MR\ufeffN: 00012345", "\uff2d\uff32\uff2e\uff1a 00012345",
+    "MRN:",  # An explicit identity field is rejected even without a value.
+])
+def test_rejects_explicit_mrn_labels(checker, text):
+    result = checker.check_text(text)
+    assert BoundaryCategory.MEDICAL_RECORD_NUMBER in {
+        finding.category for finding in result.findings
+    }
+    with pytest.raises(BoundaryValidationError, match="^text_boundary_rejected$"):
+        checker.require_text(text)
+
+
+@pytest.mark.parametrize("text", [
+    "Blood pressure 145/90 mmHg; pulse 72 bpm.",
+    "Glucose: 123 mg/dL; temperature: 37.2 C.",
+    "Synthetic numeric sequence 00012345.",
+    "The MRN field is unavailable.", "Medical record number was not provided.",
+    "MRN-like wording; record number: 00012345.",
+    "XMRN: 00012345", "MRNs: 00012345",
+])
+def test_mrn_rule_does_not_guess_from_numbers_or_unlabeled_mentions(checker, text):
+    assert not checker.check_text(text).has_violations
+
+
+def test_mrn_findings_and_errors_do_not_reflect_identifier(checker, capsys, caplog):
+    text = "MRN: SYNTHETIC-PRIVATE-0001; Medical Record Number#SYNTHETIC-PRIVATE-0002"
+    result = checker.check_text(text)
+    assert [finding.category for finding in result.findings] == [BoundaryCategory.MEDICAL_RECORD_NUMBER]
+    assert all(finding.path == "text" for finding in result.findings)
+    assert "SYNTHETIC-PRIVATE" not in json.dumps(asdict(result))
+    with pytest.raises(BoundaryValidationError, match="^text_boundary_rejected$"):
+        checker.require_text(text)
+    assert capsys.readouterr() == ("", "")
+    assert not caplog.records
+
+
+@pytest.mark.parametrize("text", [
     "I have had a headache for three days.",
     "Blood pressure was 145/90 mmHg.",
     "Temperature: 37.2 C; pulse: 72 bpm.",
@@ -91,13 +132,14 @@ def test_invalid_email_pipe_is_not_treated_as_a_letter(checker):
 def test_results_are_deterministic_and_deduplicate_categories(checker):
     text = (
         "My name is Mara Quill. Contact synthetic@example.com twice: synthetic@example.com. "
-        "SSN 000-12-3456; CPF 000.123.456-00. Phone 202-555-0198."
+        "SSN 000-12-3456; CPF 000.123.456-00. Phone 202-555-0198. MRN: SYNTHETIC-A12."
     )
     first = checker.check_text(text)
     assert first == checker.check_text(text)
     assert [finding.category for finding in first.findings] == [
         BoundaryCategory.EMAIL, BoundaryCategory.GOVERNMENT_ID,
         BoundaryCategory.PHONE, BoundaryCategory.PATIENT_NAME,
+        BoundaryCategory.MEDICAL_RECORD_NUMBER,
     ]
 
 
@@ -173,8 +215,21 @@ def test_normalization_expansion_respects_character_and_byte_limits(text, limit)
     assert result.findings[0].category is BoundaryCategory.INPUT_TOO_LARGE
 
 
-def test_normalized_empty_text_is_invalid(checker):
-    assert checker.check_text("\u200b").findings[0].category is BoundaryCategory.INVALID_INPUT
+@pytest.mark.parametrize("char", ["\u200b", "\u200c", "\u200d", "\u2060", "\ufeff"])
+def test_normalized_empty_text_is_invalid(checker, char):
+    assert checker.check_text(char).findings[0].category is BoundaryCategory.INVALID_INPUT
+
+
+@pytest.mark.parametrize("char", ["\u200b", "\u200c", "\u200d", "\u2060", "\ufeff"])
+@pytest.mark.parametrize("template,category", [
+    ("synthetic@exam{}ple.com", BoundaryCategory.EMAIL),
+    ("My na{}me is Mara Quill", BoundaryCategory.PATIENT_NAME),
+])
+def test_invisible_format_characters_cannot_hide_identifiers(checker, char, template, category):
+    text = template.format(char)
+    assert category in {finding.category for finding in checker.check_text(text).findings}
+    with pytest.raises(BoundaryValidationError, match="^text_boundary_rejected$"):
+        checker.require_text(text)
 
 
 def test_runtime_normalization_uses_configured_limit_instead_of_tools_default(checker):

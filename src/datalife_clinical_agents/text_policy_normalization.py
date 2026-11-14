@@ -5,6 +5,9 @@ import unicodedata
 MAX_INPUT_LENGTH = 10_000
 MAX_OUTPUT_LENGTH = 10_000
 
+# Strip only these specified format characters from the matching copy.
+INVISIBLE_FORMAT_MAP = str.maketrans("", "", "\u200b\u200c\u200d\u2060\ufeff")
+
 # Selected Cyrillic lookalikes for policy matching, after casefold and NFKC.
 # This is a limited allowlist, not a complete Unicode confusable mapping.
 HOMOGLYPH_MAP = str.maketrans({
@@ -34,7 +37,7 @@ def normalize_for_policy_match(
     # Normalize first: uppercase and compatibility forms can reveal map entries.
     normalized_text = unicodedata.normalize("NFKC", text.casefold())
     normalized_text = normalized_text.translate(HOMOGLYPH_MAP)
-    normalized_text = normalized_text.replace("\u200b", "")
+    normalized_text = normalized_text.translate(INVISIBLE_FORMAT_MAP)
     normalized_text = " ".join(normalized_text.split())
 
     if len(normalized_text) > max_output_length:

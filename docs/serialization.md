@@ -1,12 +1,10 @@
 # Approved-candidate serialization
 
-`serialize_approved_candidate` builds an `CandidateIntakeEnvelopeV1` for reviewable output.
+`serialize_approved_candidate` builds a `CandidateIntakeEnvelopeV1` after approval.
 It never sends an HTTP request, writes a database, changes workflow state, or
 automatically runs when the patient approves a revision.
 
 ## Responsibilities
-
-The implementation uses three small layers:
 
 - `validation.py` applies schema checks, text identifier rules, session binding,
   and resource limits. It does not make approval decisions.
@@ -48,15 +46,9 @@ The subject key appears only in the outer envelope.
 The serializer converts the session's typed UUIDv4 with `str(...)`; it never
 generates a replacement key or accepts one supplied separately by the caller.
 
-This is a local clinical-agents body contract within the core's general JSON
-ingestion contract. `CandidateIntakeEnvelopeV1` specifically represents the candidate
-JSON subset of core `IngestRequest`; it fixes `kind="json"` and
-`media_type="application/json"` because this serializer produces candidate JSON.
-It does not generate XML or DICOM. See the
-[envelope contract comparison](ingestion_envelope.md#relationship-to-core).
-It does not assume the core implements candidate-specific
-authorization. The core separately applies its own parsing and PII policy; local
-success is not a promise that a differently configured core will accept the output.
+The envelope is the candidate JSON subset of core `IngestRequest`; XML and DICOM
+are outside scope. See the [contract comparison](ingestion_envelope.md#relationship-to-core).
+Core parsing and PII policy still apply; local approval does not replace them.
 
 Encoding uses sorted keys, compact separators, UTF-8 text, and disallows nonfinite
 numbers. Identical validated candidates produce identical body strings. Encoding
@@ -124,4 +116,6 @@ The hosting application must authenticate patients, authorize session access, an
 supply trusted opaque identifiers. The machine and serializer are synchronous;
 the owner must serialize access to one instance. Approval evidence and retry
 records last only for that instance, and no durable storage or extra audit system
-is introduced. Name detection retains its [documented limits](validation.md).
+is introduced. Prose-embedded name detection remains an open limitation tracked
+in [#10](https://github.com/datalife-ehealth/datalife-clinical-agents/issues/10);
+this package is not a comprehensive PII screen for production clinical ingestion.

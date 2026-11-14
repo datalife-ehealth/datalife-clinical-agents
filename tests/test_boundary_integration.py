@@ -72,6 +72,9 @@ def approve(machine):
 @pytest.mark.parametrize("text", [
     "synthetic@exam\u200bple.com", "synthetic\uff20example.com",
     "synthetic@\u0435x\u0430mpl\u0435.com",
+    "synthetic@exam\ufeffple.com", "My na\ufeffme is Mara Quill",
+    "MRN: SYNTHETIC-0001", "Medical Record Number#SYNTHETIC-0001",
+    "MR\ufeffN: SYNTHETIC-0001",
 ])
 def test_disguised_identifiers_cannot_enter_workflow_or_serialize(monkeypatch, text):
     source = session()
@@ -93,16 +96,17 @@ def test_disguised_identifiers_cannot_enter_workflow_or_serialize(monkeypatch, t
         serialize_approved_candidate(machine, expected_revision_id=REVISION)
 
 
-def test_normalization_does_not_rewrite_stored_clinical_text():
+@pytest.mark.parametrize("char", ["\u200b", "\u200c", "\u200d", "\u2060", "\ufeff"])
+def test_normalization_does_not_rewrite_stored_clinical_text(char):
     source = session()
-    source.intake_input.raw_text = "Synthetic HEADACHE\u200b report."
+    source.intake_input.raw_text = f"Synthetic HEADACHE{char} report."
     initial = candidate()
-    initial.observations[0].value_unit.symptom = "HEAD\u200bACHE"
+    initial.observations[0].value_unit.symptom = f"HEAD{char}ACHE"
     machine = workflow(initial=initial, source=source)
     approve(machine)
     envelope = serialize_approved_candidate(machine, expected_revision_id=REVISION)
     assert machine.session_input.intake_input.raw_text == source.intake_input.raw_text
-    assert json.loads(envelope.body)["observations"][0]["value_unit"]["symptom"] == "HEAD\u200bACHE"
+    assert json.loads(envelope.body)["observations"][0]["value_unit"]["symptom"] == f"HEAD{char}ACHE"
 
 
 @pytest.mark.parametrize("text", [

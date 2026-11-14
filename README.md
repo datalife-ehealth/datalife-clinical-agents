@@ -3,25 +3,30 @@
 > Safety-bounded clinical intake and workflow-agent research for DataLife e-Health.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-0b7285.svg)](LICENSE)
-[![Project status: scaffold](https://img.shields.io/badge/status-scaffold-f59f00.svg)](#project-status)
+[![Project status: research reference](https://img.shields.io/badge/status-research_reference-f59f00.svg)](#project-status)
 [![Contributions welcome](https://img.shields.io/badge/contributions-welcome-2f9e44.svg)](CONTRIBUTING.md)
 
-`datalife-clinical-agents` is the planned experimentation and orchestration layer
-for structured patient intake, de-identified summarization, and deterministic
-workflow adapters in the [DataLife e-Health](https://github.com/datalife-ehealth)
-ecosystem. It is designed around human review, least-privilege tools, explicit data
-contracts, and complete traceability.
+`datalife-clinical-agents` implements a research/reference structured intake
+workflow for [DataLife e-Health](https://github.com/datalife-ehealth), with explicit
+data contracts, deterministic validation, and human review. Summarization and
+agent orchestration remain future work.
 
 > [!CAUTION]
-> This repository currently contains a project contract and community scaffold, not
-> a runnable agent. It is not a medical device, does not provide medical advice, and
+> This repository provides an offline intake workflow, not a hosted clinical agent.
+> It is not a medical device, does not provide medical advice, and
 > must not autonomously diagnose, triage, prescribe, or make care decisions.
 
 ## Project status
 
-**Scaffold / research lead wanted.** Agent code, model providers, and orchestration
-frameworks have not been selected. Proposals should start with a threat model,
-evaluation plan, and a narrow workflow rather than a general-purpose medical agent.
+**Research/reference intake workflow.** Strict schemas, deterministic review
+transitions, pattern-based privacy checks, and approved-only envelope construction
+are implemented. Extraction adapters, a hosted API, frontend integration, and
+durable persistence are not implemented. Model providers and orchestration
+frameworks remain unselected.
+
+The PII baseline is not a comprehensive screen for production clinical ingestion.
+Prose-embedded names remain an open RFC #1 limitation, tracked in
+[#10](https://github.com/datalife-ehealth/datalife-clinical-agents/issues/10).
 
 ## Scope
 
@@ -43,6 +48,9 @@ evaluation plan, and a narrow workflow rather than a general-purpose medical age
 - training on or retaining production patient conversations by default.
 
 ## Safety architecture
+
+Target architecture; agent, tool-execution, audit, and core-write components
+are not implemented by the current offline intake package.
 
 ```mermaid
 flowchart LR
@@ -95,10 +103,10 @@ Every implemented workflow must include:
 
 See [SECURITY.md](SECURITY.md) for private vulnerability reporting.
 
-## Proposed technical direction
+## Technical direction
 
 - Python 3.11+
-- Pydantic models generated or checked against the core OpenAPI schema
+- strict Pydantic v2 schemas with a documented core-compatible candidate envelope
 - provider-neutral model and tool interfaces
 - `pytest` with deterministic unit tests and versioned evaluation fixtures
 - no paid or external model dependency in the default test path
@@ -138,7 +146,7 @@ or model provider. Schema and workflow tests live in the top-level `tests/` dire
 [Session input v1](docs/session_input.md) for field rules and a construction example.
 See [Observation v1](docs/observations.md) for typed values and uncertainty rules.
 See [Candidate intake v1](docs/candidate_intake.md) for revision and review fields.
-See [Ingestion envelope v1](docs/ingestion_envelope.md) for the core request shape.
+See [Candidate intake envelope v1](docs/ingestion_envelope.md) for the JSON request shape.
 See [State machine](docs/state_machine.md) for transitions, corrections, and retries.
 See [Text boundary rejection](docs/validation.md) for identifier rules and limitations.
 See [Serialization](docs/serialization.md) for the approved-candidate output contract.

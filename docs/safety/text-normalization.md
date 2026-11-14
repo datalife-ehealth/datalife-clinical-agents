@@ -20,34 +20,34 @@ The function applies the following operations:
 3. Apply Unicode case folding using `casefold()`
 4. Apply Unicode NFKC normalization.
 5. Map selected Cyrillic lookalikes to Latin characters.
-6. Remove U+200B (ZERO WIDTH SPACE).
+6. Remove U+200B, U+200C, U+200D, U+2060, and U+FEFF from the matching copy.
 7. Collapse whitespace using `split()` and `" ".join()`.
 8. Reject normalized outputs longer than `max_output_length` (default 10,000 characters).
 9. Return the normalized text.
 
 ## Selected lookalikes
 
-The mapping covers Cyrillic `а е о р с х у і ј ѕ н к` to Latin
+NFKC handles full-width ASCII. The explicit mapping covers Cyrillic `а е о р с х у і ј ѕ н к` to Latin
 `a e o p c x y i j s h k`. Case folding handles their uppercase forms before
 translation; NFKC can also reveal mapped characters from compatibility forms.
-This helps detect mixed-script identifiers, but is not a complete Unicode
-confusable mapping and does not currently map Greek lookalikes. Some letters
-have different sounds in their own languages; this mapping is only for the
-policy-matching copy and must never rewrite clinical records.
+Generalized confusables and unmapped Greek lookalikes are outside scope. The
+mapping affects only the matching copy, never clinical records.
 
 ## Zero-Width Character Policy
 
-The current implementation removes only `U+200B`.
-
-Other invisible characters, including `U+200C` (ZERO WIDTH NON-JOINER), `U+200D` (ZERO WIDTH JOINER), and `U+FE0F` (VARIATION SELECTOR-16), are not explicitly removed.
-
-This narrow policy avoids indiscriminately deleting characters that may have linguistic or presentation significance.
+Matching removes `U+200B` (ZERO WIDTH SPACE), `U+200C` (ZERO WIDTH NON-JOINER),
+`U+200D` (ZERO WIDTH JOINER), `U+2060` (WORD JOINER), and `U+FEFF` (BOM).
+This prevents these characters from interrupting identifier patterns. Original
+clinical text is preserved. Other characters, such as `U+FE0F` (VARIATION
+SELECTOR-16), are not stripped; this is an explicit list, not general removal
+of Unicode format characters.
 
 ## Safety and Limitations
 
 - Uses only the Python standard library.
 - Raises `TypeError` for non-string inputs.
 - Raises `ValueError` when input or output exceeds the configured limit.
+- Limits must be positive integers; invalid configuration raises `ValueError`.
 - Error messages do not include the input text.
 - NFKC normalization can change compatibility distinctions, so the normalized representation must not replace the original clinical text.
 - The output limit is checked after normalization; intermediate allocations are not separately bounded.

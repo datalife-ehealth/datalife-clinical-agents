@@ -36,9 +36,9 @@ retry = SessionInputV1.model_validate_json(session.model_dump_json())
 assert retry == session
 ```
 
-Explicit metadata makes stable retries possible. It does not yet implement
-operation deduplication, verify who created the metadata, or authorize review.
-Those checks belong in trusted workflow code.
+The schema alone does not deduplicate operations or authorize review. The
+[state machine](state_machine.md) handles operation retries and reviewer checks;
+authentication remains the hosting application's responsibility.
 
 ## Field rules
 
@@ -59,10 +59,8 @@ Those checks belong in trusted workflow code.
 - `session_metadata.timestamp` is required and must include a timezone.
 
 Strict Python construction uses typed objects: a `UUID`, an aware `datetime`, and
-a `Modality` enum when overriding the default modality. Use
-`SessionInputV1.model_validate_json(...)` for JSON: UUIDs, timestamps, and modality
-values necessarily have string representations in that format. Passing those
-JSON strings through `model_validate(...)` is not the same operation.
+a `Modality` enum when overriding the default modality. JSON input uses their
+string forms through `SessionInputV1.model_validate_json(...)`.
 
 This is intentionally narrower than the core's general string subject-key
 constraint, defined in

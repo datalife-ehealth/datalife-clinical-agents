@@ -44,8 +44,10 @@ class TestTextPolicyNormalization(unittest.TestCase):
     def test_zero_width_space(self):
         self.assertEqual(normalize_for_policy_match(" he\u200bllO "),"hello")
 
-    def test_preserves_zero_width_joiner(self):
-        self.assertEqual(normalize_for_policy_match("hello\u200dworld"),"hello\u200dworld")
+    def test_strips_supported_invisible_format_characters(self):
+        for char in ("\u200b", "\u200c", "\u200d", "\u2060", "\ufeff"):
+            with self.subTest(codepoint=f"U+{ord(char):04X}"):
+                self.assertEqual(normalize_for_policy_match(f"hello{char}world"), "helloworld")
 
     def test_invalid_input_type(self):
         with self.assertRaises(TypeError):

@@ -51,6 +51,7 @@ address, which the reviewed core pattern can miss.
 | `government_id` | Formatted CPF (`000.123.456-00`) and SSN (`000-12-3456`) shapes. |
 | `phone` | Formatted international, parenthesized area code, or North American 3-3-4 forms with at least seven digits. |
 | `patient_name` | Explicit cues such as `my name is`, `patient name:`, `full name:`, or a standalone `Name:` label. |
+| `medical_record_number` | Explicit `MRN` or `Medical Record Number` labels followed by `:` or `#`, case-insensitive. |
 | `invalid_input` | Non-string, blank, or non-UTF-8-encodable input. |
 | `input_too_large` | Input exceeding the configured UTF-8 byte limit. |
 
@@ -64,14 +65,16 @@ patterns. It detects identity cues without trying to parse arbitrary personal
 names. It may reject a phrase containing a cue even when the patient did not
 actually supply a name. It deliberately avoids matching `symptom name: headache`.
 
+The MRN rule rejects an explicit label, even when its value is missing or marked
+unavailable. It does not guess MRNs from unlabeled numbers or ordinary mentions
+without `:` or `#`; clinical measurements are not treated as MRNs by numeric shape.
+
 ZIP/city/gender/IP uniqueness heuristics, passport rules, credit-card rules, and
-general name recognition are not implemented. Unsupported categories are not
-listed as if they were detectors. The subject key is restricted to UUIDv4 by the
+general name recognition are not implemented. The subject key is restricted to UUIDv4 by the
 session schema and to a canonical UUIDv4 string by the envelope schema, rather
 than relying on incomplete name detection. The patient client must generate it
 randomly and preserve its identity mapping locally. UUID session/revision IDs
-are not patient report text. Adapter and
-reviewer string metadata are also screened before serialization because they
+are not patient report text. Adapter and reviewer string metadata are screened because they
 appear inside the clinical JSON body; they must not contain recognizable direct
 identifiers such as an email address.
 
@@ -84,11 +87,16 @@ is rejected before regex scanning; invalid input never produces a clean result.
 
 Before pattern matching, the shared checker uses `normalize_for_policy_match()`
 from the installed package: casefold, NFKC, selected Cyrillic-to-Latin lookalike
-mapping, removal of U+200B, and whitespace
+mapping, removal of U+200B/U+200C/U+200D/U+2060/U+FEFF, and whitespace
 collapse. This catches zero-width-space interruptions and compatibility forms
 such as full-width email punctuation. The original text is also checked for
 line-based name cues. Both original and normalized text must fit the configured
 UTF-8 byte budget; invalid or normalized-empty text is rejected.
+
+Supported lookalike handling covers full-width ASCII through NFKC and the mapped
+Cyrillic letters `а е о р с х у і ј ѕ н к` (including their uppercase forms).
+Generalized Unicode confusables, including unmapped Greek lookalikes, remain
+outside scope.
 
 Normalization affects only the matching copy. Accepted clinical text is preserved
 in the models and output. Workflow entry, review, and serialization use this same
@@ -96,29 +104,18 @@ checker. This does not recognize bare names, resolve arbitrary cross-alphabet
 lookalikes, or remove every invisible Unicode character. No finding is not proof
 of anonymization.
 
-## Patient names remain on the patient device
+## Direct-name limitation
 
-A separate patient-name field may support an additional local frontend check:
-the client can compare its locally held name with the report and ask the patient
-to remove identifying text before submission. This is an option for later UI
-work, not an implemented feature in this Python module.
-
-Do not add that name or a `known_names` list to `SessionInputV1`, send it to a
-central checker, put it in logs, or maintain a shared name glossary. Names and
-identity mappings belong on the patient-controlled device. Any UI correction
-must be explicit rather than silently deleting text from the patient's report.
-
-Matching a supplied name can miss nicknames, spelling changes, and names of other
-people. The backend explicit-cue rule also misses bare names, such as the invented
-sentence `Mara Quill reports a headache.` A result without findings means only
-that none of these documented rules matched; it is not permission to send arbitrary
-free text to central services.
+Names and identity mappings remain on the patient-controlled device. This package
+accepts no `known_names` list and implements no frontend identity check.
+Explicit-cue rules miss prose such as the synthetic sentence
+`Mara Quill reports a headache.` A result without findings is not proof of anonymity.
 
 The direct-name requirement in [RFC #1](https://github.com/datalife-ehealth/datalife-clinical-agents/issues/1)
 remains an open limitation. This research/reference package must not be represented
 or relied upon as a comprehensive PII screen for production clinical ingestion.
-Generalized NER is deferred to a separate roadmap issue; no NLP models or
-capitalization heuristics are added to this boundary layer.
+Generalized NER is tracked in [#10](https://github.com/datalife-ehealth/datalife-clinical-agents/issues/10).
+No NLP models or capitalization heuristics are part of this boundary layer.
 
 ## Shared boundary functions
 

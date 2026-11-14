@@ -1,9 +1,6 @@
 # Observation v1
 
-Keep the related input and observation models in `schemas.py` while the contract
-is small. Splitting by domain can wait until navigating the file becomes difficult.
-
-`ObservationV1` is a proposal containing four things:
+`ObservationV1` contains:
 
 - `schema_version`: the literal string `"1"`.
 - `provenance`: a required source-session UUID and `self_reported` origin.
@@ -12,8 +9,7 @@ is small. Splitting by domain can wait until navigating the file becomes difficu
 
 ## Typed values
 
-`value_unit.observation_type` selects the permitted fields. This is a discriminated
-union: Pydantic reads that tag and validates the corresponding model.
+`value_unit.observation_type` selects the permitted value model.
 
 | Type | Fields | Missing values |
 | --- | --- | --- |
@@ -27,7 +23,7 @@ converted into medical recommendations. Unknown types, units, and fields fail
 validation, including when abstaining. Medication and history types are not yet
 supported; they need their own typed contracts and tests before use.
 
-Here is an invented observation:
+Synthetic example:
 
 ```python
 from uuid import UUID
@@ -75,11 +71,18 @@ proof that the content came from that source. See
 
 Keep revision identity, parent references, review state, and approval authorization
 outside the patient-provided observation fields. A structurally valid observation
-is not automatically reviewable, approved, or eligible for ingestion. Later
-validation and workflow code must handle abstentions explicitly.
+is not automatically reviewable, approved, or eligible for ingestion. The state
+machine requires abstentions to be resolved before submission and approval.
 
-The same privacy and validated-snapshot precautions described in
-[Session input v1](session_input.md) apply here: free-text PII screening remains
-unimplemented, serialization includes content, and validated instances should not
-be modified through unvalidated updates. Free-text symptom and abstention fields
-are omitted from normal representations; this does not make arbitrary logging safe.
+`validate_observation()` screens symptom text and abstention reasons through the
+active pattern-based [runtime boundary checker](validation.md). The workflow
+checks corrections and transitions; the serializer repeats candidate validation.
+Schema construction alone does not perform PII screening.
+
+Names embedded in prose can still pass. RFC #1's direct-name requirement remains
+an open limitation, tracked in [#10](https://github.com/datalife-ehealth/datalife-clinical-agents/issues/10).
+This package is not a comprehensive PII screen for production clinical ingestion.
+
+Symptom and abstention text are omitted from normal representations but included
+in model dumps. Do not log clinical content or structured validation errors.
+Revalidate changed snapshots; unvalidated updates do not establish validity.

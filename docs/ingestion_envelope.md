@@ -1,8 +1,7 @@
-# Ingestion envelope v1
+# Candidate intake envelope v1
 
 `CandidateIntakeEnvelopeV1` validates the outer request shape for candidate-intake JSON.
-It does not
-create a payload from a candidate, approve observations, or send an HTTP request.
+It does not approve observations or send an HTTP request.
 
 The contract was checked against the core
 [`IngestRequest`](https://github.com/datalife-ehealth/datalife-datalake-core/blob/main/src/api/routes/ingestion.py)
@@ -38,7 +37,7 @@ outer fields are unchanged.
 These are the only permitted outer fields. There is no extra outer
 `schema_version`: the `V1` class names this envelope contract, while intake content
 versioning belongs inside `body`. There are no `body_dict` or `body_serialized`
-fields. Keeping one body avoids having two representations that can disagree.
+fields.
 
 The subject-key format is a local intake restriction within the core's broader
 string contract. `SessionInputV1` holds a typed UUIDv4; the serializer converts
@@ -55,10 +54,7 @@ cannot be encoded as UTF-8. Duplicate keys are rejected instead of silently
 replacing an earlier value. Validation preserves the original body string,
 including whitespace, because the core hashes that exact text.
 
-## Constructing the outer shape
-
-`json.dumps` serializes a Python value into a JSON string. It must run when that
-value exists, rather than during class definition. For example:
+## Structural example
 
 ```python
 import json
@@ -80,9 +76,7 @@ assert set(payload) == {"subject_key", "kind", "media_type", "body"}
 assert isinstance(payload["body"], str)
 ```
 
-Serializing the envelope itself escapes the JSON string in `body`. This is
-expected: the outer request is a JSON object containing an inner JSON document
-as a string, as required by the core API.
+`body` remains a JSON string inside the outer request, not a nested dictionary.
 
 ## Boundary enforcement
 

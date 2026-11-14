@@ -26,6 +26,7 @@ class BoundaryCategory(str, Enum):
     GOVERNMENT_ID = "government_id"
     PHONE = "phone"
     PATIENT_NAME = "patient_name"
+    MEDICAL_RECORD_NUMBER = "medical_record_number"
     INVALID_INPUT = "invalid_input"
     INPUT_TOO_LARGE = "input_too_large"
 
@@ -105,6 +106,12 @@ _EXPLICIT_NAME_RE = re.compile(
     re.IGNORECASE | re.MULTILINE,
 )
 
+# Reject explicit MRN labels without guessing from unlabeled clinical numbers.
+_EXPLICIT_MRN_RE = re.compile(
+    r"\b(?:mrn|medical\s+record\s+number)\s*[:#]",
+    re.IGNORECASE,
+)
+
 
 class PIIBoundaryChecker:
     """Reject recognizable identifiers without changing or retaining the report.
@@ -161,6 +168,8 @@ class PIIBoundaryChecker:
         # Whitespace collapse removes line boundaries used by the Name: rule.
         if _EXPLICIT_NAME_RE.search(text) or _EXPLICIT_NAME_RE.search(original_text):
             categories.append(BoundaryCategory.PATIENT_NAME)
+        if _EXPLICIT_MRN_RE.search(text):
+            categories.append(BoundaryCategory.MEDICAL_RECORD_NUMBER)
         return BoundaryResult(tuple(Finding(category) for category in categories))
 
     def require_text(self, text: str) -> None:

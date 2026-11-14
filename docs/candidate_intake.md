@@ -97,6 +97,6 @@ Serialization includes observation content and review metadata and is not safe
 to log. No schema performs network writes or grants review authorization.
 
 The outer ingestion-envelope schema is documented in
-[Ingestion envelope v1](ingestion_envelope.md). Building its body from an approved
+[Candidate intake envelope v1](ingestion_envelope.md). Building its body from an approved
 candidate is implemented by the explicit [serializer](serialization.md), after
 workflow approval and repeated boundary checks.

@@ -7,19 +7,10 @@ Construction requires `session_input` as well as the candidate and authorized
 reviewer. The validated source session is bound to the candidate's session ID;
 its opaque subject key is later used by the serializer.
 
-`StateMachine` is a regular Python class because it manages behavior and private
-retry records. Its inputs and outputs remain Pydantic models. The five public
-methods share `_apply`, which checks arguments, checks retry identity, checks the
-current revision and state, validates the proposed candidate, and only then
-updates the machine. `model_copy(update=...)` is not used as a validation boundary.
-
-All schema models inherit `revalidate_instances="always"` from `Arguments`.
-Incoming candidates, reviews, and observations can therefore be passed directly
-to `model_validate` while still rechecking nested values. A transition uses
-`model_dump()` to prepare its field-update dictionary and validates the completed
-proposal. Already validated internal snapshots use `model_copy(deep=True)` for
-independent storage and return values without repeating validation. Deep copying
-does not validate changes and is used only after validation succeeds.
+Inputs and outputs are strict Pydantic snapshots with instance revalidation.
+Transitions validate the complete proposed update before changing state or retry
+records. Returned snapshots are detached; unvalidated copies are not a validation
+boundary.
 
 ## Transitions
 
@@ -96,61 +87,7 @@ A delayed successful retry can return an older snapshot after newer work has
 occurred. It never rewinds the current candidate. Read `candidate_intake` when the
 current snapshot is needed instead of treating a replay result as the latest state.
 
-## Synthetic example
-
-```python
-from datetime import datetime, timezone
-from uuid import UUID
-
-from datalife_clinical_agents.schemas import (
-    CandidateIntakeV1, HumanReview, ReviewStatus, SessionInputV1,
-)
-from datalife_clinical_agents.state_machine import StateMachine
-
-session_id = UUID(int=1)
-revision_id = UUID(int=2)
-session = SessionInputV1(
-    subject_key=UUID("b4c3c202-31f4-4f10-8b49-0d067a2fc1e8"),
-    intake_input={"raw_text": "Synthetic report: headache for three days."},
-    session_metadata={
-        "session_id": session_id, "timestamp": datetime(2026, 1, 1, tzinfo=timezone.utc),
-    },
-)
-draft = CandidateIntakeV1(
-    candidate_id=UUID(int=3),
-    revision_id=revision_id,
-    revision_number=1,
-    session_id=session_id,
-    extraction_provenance={"adapter_name": "synthetic_fixture", "adapter_version": "1"},
-    observations=[{
-        "provenance": {"session_id": session_id},
-        "value_unit": {"observation_type": "symptom", "symptom": "headache"},
-        "uncertainty": {"is_uncertain": True, "abstained": False},
-    }],
-)
-workflow = StateMachine(
-    candidate_intake=draft, session_input=session,
-    authorized_reviewer_id="synthetic-patient-001",
-)
-submit_arguments = {
-    "operation_id": UUID(int=10), "expected_revision_id": revision_id,
-}
-pending = workflow.submit_for_review(**submit_arguments)
-assert workflow.submit_for_review(**submit_arguments) == pending
-assert draft.review_status is ReviewStatus.DRAFT
-
-decision = HumanReview(
-    revision_id=revision_id,
-    reviewer_id="synthetic-patient-001",
-    decision=ReviewStatus.APPROVED,
-    reviewed_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
-)
-approved = workflow.approve(
-    decision, operation_id=UUID(int=11), expected_revision_id=revision_id,
-)
-assert approved.review_status is ReviewStatus.APPROVED
-assert approved.observations[0].uncertainty.is_uncertain is True
-```
+For a complete approval and serialization example, see [Serialization](serialization.md#synthetic-example).
 
 ## Limits and failure behavior
 
@@ -162,10 +99,7 @@ arguments. Both must be positive integers (booleans are rejected):
 | `max_revisions` | 100 | Initial candidate counts as one; each changed correction adds one. |
 | `max_operations` | 1,000 | Each successful new operation ID, including unchanged saves. |
 
-For example, `StateMachine(..., max_revisions=50, max_operations=500)` limits that
-instance to 50 content revisions and 500 successful operation receipts. These
-are local reference defaults, not core API limits or measured deployment budgets.
-Choose capacities for the expected session size and available memory.
+These are local reference defaults, not core API limits or measured RAM budgets.
 
 When a new request would exceed a capacity, it fails with
 `revision_capacity_reached` or `operation_capacity_reached`. Current state,
@@ -179,10 +113,9 @@ operation ID for different arguments still fails. At the revision limit,
 submission, approval, rejection, cancellation, and unchanged saves can continue
 if operation slots remain. At the operation limit, all new operations stop;
 current snapshots and already-authorized serialization remain available.
-Configure enough operation slots for expected editing and final review. Do not
-silently create a fresh machine to bypass a limit: that loses retry history and
-does not restore approval authority. The hosting application must handle a
-capacity error explicitly.
+The hosting application must budget slots for editing and review and handle
+capacity errors explicitly. Recreating a machine loses retry history and does
+not restore approval authority.
 
 These count limits combine with the existing per-payload resource limits to
 bound retained history and receipts for one instance. They are not an exact RAM
@@ -196,12 +129,11 @@ clinical content or identifiers, and the module performs no logging.
 
 One instance tracks one candidate. Calls must be serialized by its owner; this is
 not a transaction across threads or workers. Revision and retry records exist
-only for this instance's lifetime, have the capacities above, and are not restored by creating
-a fresh machine from a snapshot. They are not a new audit subsystem. Distributed
-concurrency, durable retry storage, permission revocation, and cross-instance lifecycle management
-belong to a later hosting integration, not this offline reference module.
+only for this instance's lifetime and are not restored from a snapshot.
+Distributed concurrency, durable retries, permission revocation, and instance
+lifecycle management remain hosting responsibilities.
 
-`validation.py` now applies the typed boundary and text checks. Pending review
+`validation.py` applies the typed boundary and text checks. Pending review
 means structural readiness and these documented checks passed; it is not proof
 of anonymity or clinical accuracy. See [Validation](validation.md) for detection
 limits. Approval never triggers serialization or external writes.
