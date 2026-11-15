@@ -3,25 +3,30 @@
 > Safety-bounded clinical intake and workflow-agent research for DataLife e-Health.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-0b7285.svg)](LICENSE)
-[![Project status: scaffold](https://img.shields.io/badge/status-scaffold-f59f00.svg)](#project-status)
+[![Project status: research reference](https://img.shields.io/badge/status-research_reference-f59f00.svg)](#project-status)
 [![Contributions welcome](https://img.shields.io/badge/contributions-welcome-2f9e44.svg)](CONTRIBUTING.md)
 
-`datalife-clinical-agents` is the planned experimentation and orchestration layer
-for structured patient intake, de-identified summarization, and deterministic
-workflow adapters in the [DataLife e-Health](https://github.com/datalife-ehealth)
-ecosystem. It is designed around human review, least-privilege tools, explicit data
-contracts, and complete traceability.
+`datalife-clinical-agents` implements a research/reference structured intake
+workflow for [DataLife e-Health](https://github.com/datalife-ehealth), with explicit
+data contracts, deterministic validation, and human review. Summarization and
+agent orchestration remain future work.
 
 > [!CAUTION]
-> This repository currently contains a project contract and community scaffold, not
-> a runnable agent. It is not a medical device, does not provide medical advice, and
+> This repository provides an offline intake workflow, not a hosted clinical agent.
+> It is not a medical device, does not provide medical advice, and
 > must not autonomously diagnose, triage, prescribe, or make care decisions.
 
 ## Project status
 
-**Scaffold / research lead wanted.** Agent code, model providers, and orchestration
-frameworks have not been selected. Proposals should start with a threat model,
-evaluation plan, and a narrow workflow rather than a general-purpose medical agent.
+**Research/reference intake workflow.** Strict schemas, deterministic review
+transitions, pattern-based privacy checks, and approved-only envelope construction
+are implemented. Extraction adapters, a hosted API, frontend integration, and
+durable persistence are not implemented. Model providers and orchestration
+frameworks remain unselected.
+
+The PII baseline is not a comprehensive screen for production clinical ingestion.
+Prose-embedded names remain an open RFC #1 limitation, tracked in
+[#10](https://github.com/datalife-ehealth/datalife-clinical-agents/issues/10).
 
 ## Scope
 
@@ -44,6 +49,9 @@ evaluation plan, and a narrow workflow rather than a general-purpose medical age
 
 ## Safety architecture
 
+Target architecture; agent, tool-execution, audit, and core-write components
+are not implemented by the current offline intake package.
+
 ```mermaid
 flowchart LR
     Input[De-identified input] --> Validate[Schema and PII gate]
@@ -61,6 +69,12 @@ from typed schemas, independently authorized, bounded by time and scope, and saf
 retry. Prompt text never grants privileges.
 
 ## Core API dependency
+
+The intake implementation requires a stable, randomly generated UUIDv4 subject
+key from the patient client. Sessions hold a typed UUID; outgoing envelopes use
+its canonical string form. This intentionally narrows the core's general string
+contract to prevent direct identifiers in subject metadata. Identity mappings
+remain on the patient-controlled device; see [session input](docs/session_input.md).
 
 The current reference integration is
 [`datalife-datalake-core`](https://github.com/datalife-ehealth/datalife-datalake-core):
@@ -89,10 +103,10 @@ Every implemented workflow must include:
 
 See [SECURITY.md](SECURITY.md) for private vulnerability reporting.
 
-## Proposed technical direction
+## Technical direction
 
 - Python 3.11+
-- Pydantic models generated or checked against the core OpenAPI schema
+- strict Pydantic v2 schemas with a documented core-compatible candidate envelope
 - provider-neutral model and tool interfaces
 - `pytest` with deterministic unit tests and versioned evaluation fixtures
 - no paid or external model dependency in the default test path
@@ -102,12 +116,40 @@ show why they satisfy the safety bar.
 
 ## Getting started
 
-There is no package to install yet:
+The Python package requires Python 3.11 or newer. Session-input, initial
+observation, candidate-revision, and outer ingestion-envelope schemas are
+implemented, along with an in-memory deterministic review state machine.
+Offline boundary checks are integrated with the workflow, and an explicit serializer
+produces a candidate ingestion envelope after approval without a network write.
+Extraction adapters, a hosted API, and frontend integration are not implemented.
 
 ```bash
 git clone https://github.com/datalife-ehealth/datalife-clinical-agents.git
 cd datalife-clinical-agents
+python -m venv .venv
 ```
+
+Activate the virtual environment with `.venv\Scripts\Activate.ps1` in PowerShell
+or `source .venv/bin/activate` on macOS/Linux, then install the package and test
+dependencies:
+
+```bash
+python -m pip install -e ".[test]"
+python -c "import datalife_clinical_agents"
+python -m pytest
+```
+
+Editable installation makes changes under `src/datalife_clinical_agents` available
+without reinstalling. Dependency installation needs access to a package index or
+a local package cache; the package and default tests require no external service
+or model provider. Schema and workflow tests live in the top-level `tests/` directory. See
+[Session input v1](docs/session_input.md) for field rules and a construction example.
+See [Observation v1](docs/observations.md) for typed values and uncertainty rules.
+See [Candidate intake v1](docs/candidate_intake.md) for revision and review fields.
+See [Candidate intake envelope v1](docs/ingestion_envelope.md) for the JSON request shape.
+See [State machine](docs/state_machine.md) for transitions, corrections, and retries.
+See [Text boundary rejection](docs/validation.md) for identifier rules and limitations.
+See [Serialization](docs/serialization.md) for the approved-candidate output contract.
 
 Read [CONTRIBUTING.md](CONTRIBUTING.md), then propose one bounded use case and its
 evaluation dataset. Never use real patient records in an issue, fixture, demo, or

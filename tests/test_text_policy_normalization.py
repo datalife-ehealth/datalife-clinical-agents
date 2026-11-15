@@ -7,6 +7,34 @@ from tools.text_policy_normalization import normalize_for_policy_match
 
 class TestTextPolicyNormalization(unittest.TestCase):
 
+    def test_selected_cyrillic_lookalikes_in_both_cases(self):
+        cyrillic = "\u0430\u0435\u043e\u0440\u0441\u0445\u0443\u0456\u0458\u0455\u043d\u043a"
+        self.assertEqual(normalize_for_policy_match(cyrillic), "aeopcxyijshk")
+        self.assertEqual(normalize_for_policy_match(cyrillic.upper()), "aeopcxyijshk")
+
+    def test_nfkc_reveals_cyrillic_lookalike_before_translation(self):
+        # Modifier letter Cyrillic en becomes Cyrillic en under NFKC, then h.
+        self.assertEqual(normalize_for_policy_match("\u1d78"), "h")
+
+    def test_unmapped_greek_lookalike_remains_unchanged(self):
+        self.assertEqual(normalize_for_policy_match("\u03bf"), "\u03bf")
+
+    def test_custom_character_limits(self):
+        self.assertEqual(normalize_for_policy_match(
+            "A" * 10_001, max_input_length=10_001, max_output_length=10_001,
+        ), "a" * 10_001)
+        with self.assertRaises(ValueError):
+            normalize_for_policy_match("abcd", max_input_length=3)
+        with self.assertRaises(ValueError):
+            normalize_for_policy_match("\ufb03", max_output_length=2)
+
+    def test_invalid_limit_configuration(self):
+        for value in (0, -1, True, "100", 1.5, None):
+            for setting in ("max_input_length", "max_output_length"):
+                with self.subTest(setting=setting, value=value):
+                    with self.assertRaises(ValueError):
+                        normalize_for_policy_match("synthetic", **{setting: value})
+
     def test_nfkc_and_casefold(self):
         self.assertEqual(normalize_for_policy_match("ＨＥＬＬＯ"), "hello")
 
@@ -16,8 +44,10 @@ class TestTextPolicyNormalization(unittest.TestCase):
     def test_zero_width_space(self):
         self.assertEqual(normalize_for_policy_match(" he\u200bllO "),"hello")
 
-    def test_preserves_zero_width_joiner(self):
-        self.assertEqual(normalize_for_policy_match("hello\u200dworld"),"hello\u200dworld")
+    def test_strips_supported_invisible_format_characters(self):
+        for char in ("\u200b", "\u200c", "\u200d", "\u2060", "\ufeff"):
+            with self.subTest(codepoint=f"U+{ord(char):04X}"):
+                self.assertEqual(normalize_for_policy_match(f"hello{char}world"), "helloworld")
 
     def test_invalid_input_type(self):
         with self.assertRaises(TypeError):

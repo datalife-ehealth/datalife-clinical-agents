@@ -15,9 +15,9 @@
     "expected": "hello"
   },
   {
-    "name": "preserve_zero_width_joiner",
+    "name": "strip_zero_width_joiner",
     "input": "hello\u200dworld",
-    "expected": "hello\u200dworld"
+    "expected": "helloworld"
   },
   {
     "name": "greek_sigma",
